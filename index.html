@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emoji Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Almendra&family=Amiri&family=Cinzel&family=Lobster&family=Meie+Script&family=Noto+Nastaliq+Urdu&family=Oswald&family=Parisienne&family=Playfair+Display&family=Poppins&family=Sriracha&family=Ubuntu&family=Yuji+Syuku&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: black;
+            margin: 0;
+            overflow: hidden; /* Hide scrollbars */
+            cursor: pointer;
+            color: white;
+            font-family: sans-serif;
+            user-select: none; /* Prevent text selection */
+        }
+
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            font-size: 36px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 2px #fff, 0 0 5px #00ff00, 0 0 10px #00ff00; /* Reduced glow */
+            z-index: 15;
+        }
+
+        #city-title {
+            position: absolute;
+            top: 70px; /* Below the score */
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 36px;
+            font-weight: bold;
+            text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 20px #ff0, 0 0 30px #ff0;
+            z-index: 15;
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            background-image: var(--flag-gradient);
+            display: none; /* Hidden by default */
+        }
+
+        #person-container {
+            position: absolute;
+            width: 50px;
+            height: auto;
+            text-align: center;
+            transform: translate(-50%, -50%); 
+            will-change: left, top;
+            z-index: 5;
+        }
+        
+        #person-emoji {
+            font-size: 50px;
+            line-height: 50px;
+            width: 100px; /* Allow space for luggage */
+            text-align: center;
+        }
+
+        #person-label {
+            font-size: 12px;
+        }
+
+        #passport-office-container, #airport-container, #mf-group-container, #luggage-container, #restaurant-container, #gift-shop-container {
+            position: absolute;
+            text-align: center;
+            z-index: 2;
+            transition: transform 0.2s ease-in-out;
+        }
+        
+        #passport-office-container:hover, #airport-container:hover, #mf-group-container:hover {
+            transform: scale(1.1);
+        }
+
+        #passport-office-container {
+            top: 20px;
+            left: 20px;
+        }
+
+        #restaurant-container, #gift-shop-container {
+            width: 200px;
+            height: 100px;
+            border: 3px solid #005A9C; /* Darker blue border */
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: "Monotype Corsiva", "Brush Script MT", cursive;
+            font-size: 36px;
+            color: #002D62; /* Darker blue text */
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s, transform 0.2s ease-in-out;
+            background-color: #ADD8E6; /* Light baby blue background */
+        }
+
+        #restaurant-container:hover, #gift-shop-container:hover {
+            background-color: #87CEEB; /* Sky blue on hover */
+            border-color: #002D62;
+            transform: scale(1.1);
+        }
+        
+        #restaurant-container {
+            top: 20px;
+            left: 20px;
+        }
+
+        #gift-shop-container {
+            top: 140px;
+            left: 20px;
+            font-size: 28px;
+        }
+
+        #airport-container {
+            top: 20px;
+            right: 20px;
+        }
+
+        #mf-group-container {
+            bottom: 20px;
+            right: 20px;
+        }
+
+        #luggage-container {
+            bottom: 20px;
+            left: 20px;
+            font-size: 50px;
+        }
+
+        #passport-office-img, #airport-img, #mf-group-img {
+            width: 150px;
+            height: 150px;
+            border: 2px solid #555;
+            border-radius: 8px;
+            object-fit: cover;
+            cursor: pointer;
+            background-color: #f0f0f0;
+        }
+        
+        #away-airport-placeholder {
+            width: 250px;
+            height: 250px;
+            border: 3px solid yellow;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-weight: bold;
+            font-size: 18px;
+            color: yellow;
+            padding: 10px;
+            box-sizing: border-box;
+            cursor: pointer;
+            background-size: cover;
+            background-position: center;
+        }
+
+        .location-label {
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        .dialog-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex; /* FIX: Set default display to flex */
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 10;
+            background-color: rgba(0, 0, 0, 0.85);
+            padding: 20px;
+            border-radius: 15px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+
+        #officer-emoji, #success-emoji {
+            font-size: 80px;
+        }
+
+        #speech-bubble, #success-text {
+            margin-top: 15px;
+            background: #fff;
+            color: #000;
+            padding: 10px 15px;
+            border-radius: 10px;
+            position: relative;
+            font-size: 16px;
+            font-weight: bold;
+            max-width: 200px;
+            text-align: center;
+        }
+
+        #speech-bubble::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 0 10px 10px 10px;
+            border-style: solid;
+            border-color: transparent transparent #fff transparent;
+        }
+
+        .action-button {
+            background-color: yellow;
+            color: black;
+            border: none;
+            padding: 15px 25px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background-color 0.2s;
+        }
+
+        .action-button:hover:not(:disabled) {
+            background-color: lightgreen;
+        }
+
+        .action-button:disabled {
+            background-color: red;
+            color: white;
+            cursor: not-allowed;
+        }
+
+        #flights-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            padding: 10px;
+        }
+        
+        .flight-button {
+            background-color: yellow;
+            color: black;
+            border: none;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: left;
+            font-size: 12px;
+            line-height: 1.4;
+            display: flex;
+            flex-direction: column;
+            transition: background-color 0.2s;
+            position: relative; /* For checkmark positioning */
+        }
+
+        .flight-button .visited-checkmark, .gift-item .visited-checkmark {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            font-size: 20px;
+        }
+        
+        .gift-item .visited-checkmark {
+            font-size: 16px;
+        }
+
+        .flight-button:hover:not(:disabled) {
+            background-color: lightgreen;
+        }
+
+        .flight-button:disabled {
+             background-color: red;
+            color: white;
+            cursor: not-allowed;
+        }
+
+        .flight-button strong {
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        
+        #plane-animation {
+            font-size: 100px;
+        }
+        
+        #flight-animation-wrapper {
+            position: relative;
+            width: 250px;
+            height: 150px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #globe-emoji {
+            font-size: 100px;
+        }
+
+        #plane-emoji-anim {
+            position: absolute;
+            font-size: 50px;
+            animation: fly-over-globe 3s ease-in-out forwards;
+        }
+
+        @keyframes fly-over-globe {
+            0% { transform: translate(-120px, 40px) rotate(-45deg) scale(0.7); opacity: 0; }
+            20% { transform: translate(-60px, -30px) rotate(0deg) scale(1); opacity: 1; }
+            50% { transform: translate(0, -80px) rotate(25deg) scale(1.2); }
+            80% { transform: translate(60px, -30px) rotate(0deg) scale(1); }
+            100% { transform: translate(120px, 40px) rotate(-45deg) scale(0.7); opacity: 0; }
+        }
+
+        /* Passport Celebration Animation */
+        #passport-celebration {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            background: rgba(0,0,0,0.7);
+        }
+        #passport-celebration.active { display: flex; }
+        #celebration-passport-emoji {
+            font-size: 150px;
+            animation: passport-fade 2.5s ease-in-out forwards;
+        }
+        @keyframes passport-fade {
+            0%, 100% { opacity: 0; transform: scale(0.5); }
+            20%, 80% { opacity: 1; transform: scale(1); }
+        }
+        .sparkle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: sparkle-anim 1s ease-out forwards;
+            opacity: 0;
+        }
+        @keyframes sparkle-anim {
+            0% { transform: scale(0.5); opacity: 1; }
+            100% { transform: scale(1.5) translate(var(--tx), var(--ty)); opacity: 0; }
+        }
+
+        /* Visa Stamping Animation */
+        #visa-animation-container {
+            position: relative;
+            width: 200px;
+            height: 150px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #visa-passport-emoji {
+            font-size: 120px;
+            color: #7a9cff;
+        }
+        #visa-sticker-emoji {
+            position: absolute;
+            font-size: 60px;
+            opacity: 0;
+            transform: scale(3);
+            animation: stamp-visa 1s cubic-bezier(0.18, 0.89, 0.32, 1.28) 0.5s forwards;
+        }
+        @keyframes stamp-visa {
+            to { opacity: 1; transform: scale(1) rotate(-15deg); }
+        }
+        
+        .city-image-container {
+            position: absolute;
+            bottom: 120px; /* Raised to make space for emojis */
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1;
+        }
+        .city-image-container img {
+            width: 640px;
+            height: 480px;
+            max-width: 90vw;
+            max-height: 60vh;
+            object-fit: cover;
+            border-radius: 12px;
+            border: 3px solid yellow;
+        }
+        
+        /* --- RESTAURANT VIEW --- */
+        #restaurant-view-container {
+            position: relative; /* For exit button positioning */
+            padding: 15px;
+            background-color: rgba(10, 10, 10, 0.9);
+            border: 3px solid yellow;
+        }
+
+        #restaurant-image {
+            width: 560px; /* User requested smaller size */
+            height: 370px;
+            max-width: 90vw;
+            max-height: 80vh;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        #exit-restaurant-btn {
+            position: absolute;
+            top: -15px;
+            right: -15px;
+            font-size: 20px;
+            font-family: sans-serif;
+            font-weight: bold;
+            color: black;
+            background: white;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: 2px solid black;
+            z-index: 21; /* Above dialog content */
+        }
+        #exit-restaurant-btn:hover {
+            background: red;
+            color: white;
+        }
+        
+        #caption-container {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            text-align: center;
+            font-family: 'Lucida Console', monospace;
+            font-size: 12pt;
+            color: #39ff14; /* Neon Green */
+            text-shadow: 0 0 5px #39ff14;
+            z-index: 25;
+            pointer-events: none;
+            min-height: 20px;
+        }
+        
+        #city-emojis {
+            position: absolute;
+            bottom: 40px; /* Above caption */
+            left: 50%;
+            transform: translateX(-50%);
+            display: none; /* Hidden by default */
+            gap: 15px;
+            z-index: 15;
+            padding: 10px;
+            background-color: rgba(0,0,0,0.5);
+            border-radius: 20px;
+        }
+
+        #city-emojis span {
+            font-size: 50px;
+            width: 50px;
+            height: 50px;
+            line-height: 50px;
+            text-align: center;
+        }
+        
+        #visited-cities-list, #souvenirs-container {
+            position: absolute;
+            top: 100px;
+            background: rgba(0,0,0,0.6);
+            padding: 10px 15px;
+            border-radius: 10px;
+            border: 1px solid #444;
+            z-index: 10;
+        }
+        #visited-cities-list { left: 20px; }
+        #souvenirs-container { right: 20px; }
+
+        #visited-cities-list h3, #souvenirs-container h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: yellow;
+            text-align: center;
+        }
+
+        #visited-cities-list ul, #souvenirs-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        #visited-cities-list li, .souvenir-item {
+            font-size: 14px;
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+        #visited-cities-list li::before {
+            content: '✅ ';
+        }
+
+        #gift-shop-dialog h3 {
+            margin: 0 0 15px 0;
+        }
+
+        #gift-shop-items-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .gift-item {
+            padding: 10px;
+            font-size: 14px;
+            line-height: 1.3;
+            position: relative;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="score">$0</div>
+    <div id="city-title"></div>
+    <div id="visited-cities-list" class="hidden">
+        <h3>Visited</h3>
+        <ul id="visited-list"></ul>
+    </div>
+    <div id="souvenirs-container" class="hidden">
+        <h3>Souvenirs</h3>
+        <div id="souvenirs-list"></div>
+    </div>
+
+
+    <div id="passport-office-container">
+        <img id="passport-office-img" src="https://upload.wikimedia.org/wikipedia/commons/2/28/Canada_Centre_Building_Scarborough_Exterior.JPG" alt="Passport Office">
+        <div class="location-label">Passport Office</div>
+    </div>
+    
+    <div id="restaurant-container" class="hidden">Restaurant</div>
+    <div id="gift-shop-container" class="hidden">🎁 Gift Shop</div>
+
+    <div id="airport-container">
+        <img id="airport-img" src="https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=1950&q=80" alt="Toronto Pearson Airport">
+        <div id="airport-label" class="location-label">Airport</div>
+        <div id="away-airport-placeholder" class="hidden"></div>
+    </div>
+
+    <div id="mf-group-container">
+        <img id="mf-group-img" src="https://i.ibb.co/LXXG18cR/company.png" alt="company">
+        <div class="location-label">Company</div>
+    </div>
+
+    <div id="luggage-container">🧳</div>
+    
+    <div id="city-image-container" class="city-image-container hidden">
+        <img id="city-image" src="" alt="City View">
+    </div>
+
+    <div id="city-emojis"></div>
+    <div id="caption-container"></div>
+
+    <div id="person-container">
+        <div id="person-emoji">🚶</div>
+        <div id="person-label">Person</div>
+    </div>
+    
+    <div id="officer-message" class="dialog-container hidden">
+        <div id="officer-emoji">👮</div>
+        <div id="speech-bubble">You must have a passport to travel</div>
+    </div>
+
+    <div id="passport-dialog" class="dialog-container hidden">
+        <button id="apply-passport-btn" class="action-button">Apply for passport $200</button>
+    </div>
+
+     <div id="job-dialog" class="dialog-container hidden">
+        <button id="apply-job-btn" class="action-button">Apply for a job</button>
+    </div>
+
+    <div id="flights-dialog" class="dialog-container hidden">
+        <div id="flights-container"></div>
+    </div>
+
+    <div id="restaurant-view-container" class="dialog-container hidden">
+        <div id="exit-restaurant-btn">X</div>
+        <img id="restaurant-image" src="" alt="Restaurant View">
+    </div>
+
+    <div id="gift-shop-dialog" class="dialog-container hidden">
+        <h3>Gift Shop</h3>
+        <div id="gift-shop-items-container"></div>
+        <button id="exit-gift-shop-btn" class="action-button">Close</button>
+    </div>
+    
+    <div id="plane-animation" class="dialog-container hidden">
+        <div id="flight-animation-wrapper">
+             <span id="globe-emoji">🌍</span>
+             <span id="plane-emoji-anim">✈️</span>
+        </div>
+    </div>
+
+    <div id="success-message" class="dialog-container hidden">
+        <div id="success-emoji">✅</div>
+        <p id="success-text"></p>
+    </div>
+
+    <div id="passport-celebration">
+        <span id="celebration-passport-emoji">🛂</span>
+    </div>
+
+    <div id="visa-animation" class="dialog-container hidden">
+        <div id="visa-animation-container">
+            <span id="visa-passport-emoji">🛂</span>
+            <span id="visa-sticker-emoji"></span>
+        </div>
+    </div>
+
+    <script type="module" src="index.tsx"></script>
+</body>
+</html>
