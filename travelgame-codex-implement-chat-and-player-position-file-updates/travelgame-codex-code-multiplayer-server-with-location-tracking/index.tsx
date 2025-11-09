@@ -77,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatHistory = document.getElementById('chat-history') as HTMLElement;
     const chatInput = document.getElementById('chat-input') as HTMLInputElement;
     const chatSendBtn = document.getElementById('chat-send-btn') as HTMLButtonElement;
+    const selfChatBubble = document.getElementById('self-chat-bubble') as HTMLElement;
 
 
     // --- Audio Engine ---
@@ -242,6 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
         targetX: number;
         targetY: number;
         zone: string;
+        city: string;
         isFacingRight: boolean;
         element: HTMLElement;
         emojiElement: HTMLElement;
@@ -296,6 +298,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return currentLocation === 'Toronto' ? 'arrival' : currentLocation;
     }
 
+    function normaliseCity(city?: string, zone?: string): string {
+        if (typeof city === 'string' && city.trim()) {
+            return city.trim().slice(0, 64);
+        }
+        if (zone === 'arrival') {
+            return 'Toronto';
+        }
+        if (typeof zone === 'string' && zone.trim()) {
+            return zone.trim().slice(0, 64);
+        }
+        return 'Toronto';
+    }
+
     function hashString(value: string): number {
         let hash = 0;
         for (let i = 0; i < value.length; i++) {
@@ -331,22 +346,23 @@ document.addEventListener('DOMContentLoaded', () => {
             x,
             y,
             zone: getCurrentZone(),
+            city: currentLocation,
             direction: isFacingRight ? 'right' : 'left',
         });
 
         // Then, get the global state
         try {
-            const response = await fetch('/state');
+            const response = await fetch('/chatlog.txt');
             if (!response.ok) {
                 throw new Error(`Failed to fetch state: ${response.statusText}`);
             }
             const data = await response.json();
-            
+
             // Process players
             const receivedPlayerIds = new Set();
-            if (data.players) {
+            if (Array.isArray(data.players)) {
                 data.players.forEach((p: any) => {
-                    if (p.id === selfId) return;
+                    if (!p || typeof p.id !== 'string' || p.id === selfId) return;
                     receivedPlayerIds.add(p.id);
                     updateOtherPlayerFromState(p);
                 });
@@ -360,13 +376,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Process chat
-            if (data.chat) {
-                const newMessages = data.chat.filter((c: any) => c.timestamp > lastChatTimestamp);
+            if (Array.isArray(data.chat)) {
+                const newMessages = data.chat.filter((c: any) => typeof c.timestamp === 'number' && c.timestamp > lastChatTimestamp);
                 newMessages.forEach((entry: any) => {
-                    if (entry.playerId === selfId) return;
-                    addChatMessage(entry.name, entry.message, colorForPlayer(entry.playerId));
-                    showChatBubble(entry.playerId, entry.message);
                     lastChatTimestamp = Math.max(lastChatTimestamp, entry.timestamp);
+                    const senderId = typeof entry.playerId === 'string' ? entry.playerId : 'unknown';
+                    if (senderId === selfId) return;
+                    if (entry.city && entry.city !== currentLocation) return;
+                    if (typeof entry.message !== 'string' || !entry.message.trim()) return;
+                    const senderName = typeof entry.name === 'string' && entry.name.trim() ? entry.name : 'Traveler';
+                    addChatMessage(senderName, entry.message, colorForPlayer(senderId));
+                    showChatBubble(senderId, entry.message);
                 });
             }
 
@@ -375,7 +395,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function createOtherPlayerElement(state: { id: string; name?: string; emoji?: string; zone?: string; x?: number; y?: number; direction?: string; }): OtherPlayer {
+    function createOtherPlayerElement(state: { id: string; name?: string; emoji?: string; zone?: string; city?: string; x?: number; y?: number; direction?: string; }): OtherPlayer {
         const container = document.createElement('div');
         container.className = 'other-player';
         container.innerHTML = `
@@ -391,6 +411,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const color = colorForPlayer(state.id);
         labelEl.style.color = color;
 
+        const zone = typeof state.zone === 'string' ? state.zone : 'arrival';
+        const city = normaliseCity(state.city, zone);
+
         const player: OtherPlayer = {
             id: state.id,
             name: state.name ?? 'Traveler',
@@ -399,7 +422,8 @@ document.addEventListener('DOMContentLoaded', () => {
             y: state.y ?? y,
             targetX: state.x ?? x,
             targetY: state.y ?? y,
-            zone: state.zone ?? 'arrival',
+            zone,
+            city,
             isFacingRight: state.direction === 'right',
             element: container,
             emojiElement: emojiEl,
@@ -419,8 +443,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateOtherPlayerVisibility(player: OtherPlayer) {
-        const shouldShow = player.zone === getCurrentZone();
+        const shouldShow = player.zone === getCurrentZone() && player.city === currentLocation;
         player.element.classList.toggle('hidden', !shouldShow);
+        if (!shouldShow) {
+            player.bubbleElement.classList.remove('visible');
+            player.bubbleElement.classList.add('hidden');
+        }
     }
 
     function removeOtherPlayer(id: string) {
@@ -432,7 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showChatBubble(playerId: string, message: string) {
         const player = otherPlayers.get(playerId);
-        if (!player || player.zone !== getCurrentZone()) return;
+        if (!player || player.zone !== getCurrentZone() || player.city !== currentLocation) return;
 
         player.bubbleElement.textContent = message;
         player.bubbleElement.classList.remove('hidden');
@@ -447,7 +475,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 4500);
     }
 
-    function updateOtherPlayerFromState(state: { id: string; name?: string; emoji?: string; x?: number; y?: number; zone?: string; direction?: string; }) {
+    function showSelfChatBubble(message: string) {
+        if (!selfChatBubble) return;
+
+        selfChatBubble.textContent = message;
+        selfChatBubble.classList.remove('hidden');
+        selfChatBubble.classList.add('visible');
+
+        setTimeout(() => {
+            selfChatBubble.classList.remove('visible');
+        }, 4000);
+
+        setTimeout(() => {
+            selfChatBubble.classList.add('hidden');
+        }, 4500);
+    }
+
+    function hideSelfChatBubble() {
+        if (!selfChatBubble) return;
+        selfChatBubble.classList.remove('visible');
+        selfChatBubble.classList.add('hidden');
+    }
+
+    function updateOtherPlayerFromState(state: { id: string; name?: string; emoji?: string; x?: number; y?: number; zone?: string; city?: string; direction?: string; }) {
         if (!state.id || state.id === selfId) return;
 
         let existing = otherPlayers.get(state.id);
@@ -470,8 +520,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (typeof state.zone === 'string' && state.zone !== existing.zone) {
             existing.zone = state.zone;
-            updateOtherPlayerVisibility(existing);
         }
+
+        existing.city = normaliseCity(state.city, existing.zone);
+        updateOtherPlayerVisibility(existing);
 
         if (state.direction === 'right' && !existing.isFacingRight) {
             existing.isFacingRight = true;
@@ -692,11 +744,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const message = chatInput.value.trim();
         if (message) {
             addChatMessage(playerName, message, colorForPlayer(selfId));
+            showSelfChatBubble(message);
             lastChatTimestamp = Date.now();
             await sendPostRequest('/chat', {
                 id: selfId,
                 name: playerName,
                 message: message,
+                city: currentLocation,
+                zone: getCurrentZone(),
                 timestamp: lastChatTimestamp,
             });
             chatInput.value = '';
@@ -730,6 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         cityEmojis.innerHTML = flight.emojis.map(e => `<span>${e}</span>`).join('');
         otherPlayers.forEach(updateOtherPlayerVisibility);
+        hideSelfChatBubble();
     }
 
     function showHomeView() {
@@ -753,6 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentLocation = 'Toronto';
         captionContainer.innerHTML = '';
         otherPlayers.forEach(updateOtherPlayerVisibility);
+        hideSelfChatBubble();
     }
 
     function playPassportCelebration() {

@@ -102,6 +102,7 @@
             transform: translate(-50%, -50%); 
             will-change: left, top;
             z-index: 5;
+            overflow: visible;
         }
         
         #person-emoji, .other-player-emoji {
@@ -1046,28 +1047,34 @@
             position: fixed;
             bottom: 80px;
             left: 20px;
-            width: 300px;
-            height: 200px;
-            background-color: rgba(0, 0, 0, 0.75);
-            border: 1px solid #9370db;
-            border-radius: 10px;
+            width: 320px;
+            height: 220px;
+            background: radial-gradient(circle at top, rgba(62, 45, 110, 0.92), rgba(22, 18, 45, 0.92));
+            border: 2px solid #ffdf73;
+            border-radius: 14px;
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45);
             display: flex;
             flex-direction: column;
             z-index: 15;
-            font-family: 'Lucida Console', monospace;
+            font-family: 'Trebuchet MS', 'Lucida Console', monospace;
+            overflow: hidden;
+            backdrop-filter: blur(4px);
         }
 
         #chat-history {
             flex-grow: 1;
             overflow-y: auto;
             padding: 10px;
-            font-size: 12px;
+            font-size: 13px;
             line-height: 1.4;
+            color: #ffe9b6;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
         }
 
         #chat-history p {
             margin: 0 0 5px 0;
             word-wrap: break-word;
+            padding: 2px 4px;
         }
 
         #chat-input-container {
@@ -1078,29 +1085,137 @@
         #chat-input {
             flex-grow: 1;
             border: none;
-            background: #222;
-            color: white;
-            padding: 8px;
+            background: rgba(18, 14, 32, 0.95);
+            color: #ffe9b6;
+            padding: 10px;
             outline: none;
             border-bottom-left-radius: 9px;
         }
 
         #chat-send-btn {
             border: none;
-            background: #9370db;
-            color: white;
-            padding: 0 15px;
+            background: linear-gradient(180deg, #ffe37a, #ffb347);
+            color: #3a2461;
+            padding: 0 18px;
             cursor: pointer;
             font-weight: bold;
             border-bottom-right-radius: 9px;
+            text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
         }
         #chat-send-btn:hover {
-            background: #8a2be2;
+            background: linear-gradient(180deg, #fff1a8, #ffc36a);
+        }
+
+        .chat-bubble {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translate(-50%, -10px) scale(0.9);
+            max-width: 220px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 236, 177, 0.95));
+            border: 2px solid #4f2a7f;
+            border-radius: 16px;
+            color: #322553;
+            padding: 8px 12px;
+            font-size: 13px;
+            line-height: 1.3;
+            font-weight: 600;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease, transform 0.25s ease;
+            white-space: normal;
+            text-align: center;
+            z-index: 20;
+            text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+        }
+
+        .chat-bubble.visible {
+            opacity: 1;
+            transform: translate(-50%, -24px) scale(1);
+            animation: bubble-pop 0.25s ease-out;
+        }
+
+        .chat-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 10px 10px 0 10px;
+            border-style: solid;
+            border-color: rgba(255, 236, 177, 0.95) transparent transparent transparent;
+            filter: drop-shadow(0 -2px 0 #4f2a7f);
+        }
+
+        @keyframes bubble-pop {
+            0% {
+                opacity: 0;
+                transform: translate(-50%, 0) scale(0.6);
+            }
+            70% {
+                opacity: 1;
+                transform: translate(-50%, -28px) scale(1.05);
+            }
+            100% {
+                opacity: 1;
+                transform: translate(-50%, -24px) scale(1);
+            }
+        }
+
+        /* Loading Screen */
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #111;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            transition: opacity 0.5s ease;
+            opacity: 1;
+            pointer-events: none;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
     </style>
+<script type="importmap">
+{
+  "imports": {
+    "http": "https://aistudiocdn.com/http@^0.0.1-security",
+    "crypto": "https://aistudiocdn.com/crypto@^1.0.1",
+    "events": "https://aistudiocdn.com/events@^3.3.0",
+    "path": "https://aistudiocdn.com/path@^0.12.7",
+    "vite": "https://aistudiocdn.com/vite@^7.2.2",
+    "url": "https://aistudiocdn.com/url@^0.11.4",
+    "fs": "https://aistudiocdn.com/fs@^0.0.1-security"
+  }
+}
+</script>
 </head>
 <body>
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <p>Loading your adventure...</p>
+    </div>
+
     <div id="score">$0</div>
     <div id="toast-container"></div>
     <div id="flight-tooltip"></div>
@@ -1152,11 +1267,12 @@
     <div id="person-container">
         <div id="person-emoji">🚶</div>
         <div id="person-label">Person</div>
+        <div id="self-chat-bubble" class="chat-bubble hidden"></div>
     </div>
-    
+
     <div id="other-players-container"></div>
-    
-    <div id="chat-container" class="hidden">
+
+    <div id="chat-container">
         <div id="chat-history"></div>
         <div id="chat-input-container">
             <input type="text" id="chat-input" placeholder="Say something..." maxlength="100">
