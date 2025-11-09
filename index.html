@@ -94,7 +94,7 @@
             display: none; /* Hidden by default */
         }
 
-        #person-container {
+        #person-container, .other-player {
             position: absolute;
             width: 50px;
             height: auto;
@@ -104,7 +104,7 @@
             z-index: 5;
         }
         
-        #person-emoji {
+        #person-emoji, .other-player-emoji {
             font-size: 40px; /* Slightly smaller */
             line-height: 40px;
             width: 100px; /* Allow space for luggage */
@@ -112,7 +112,7 @@
             transition: transform 0.2s ease;
         }
 
-        #person-label {
+        #person-label, .other-player-label {
             font-size: 12px;
             color: yellow;
             text-shadow: 1px 1px 2px #000;
@@ -168,6 +168,7 @@
             display: flex;
             align-items: flex-end;
             gap: 15px;
+            z-index: 3;
         }
 
         #luggage-container, #settings-container {
@@ -1040,6 +1041,62 @@
             100% { transform: scale(1.5) translate(var(--tx), var(--ty)); opacity: 0; }
         }
 
+        /* NEW: Chat UI Styles */
+        #chat-container {
+            position: fixed;
+            bottom: 80px;
+            left: 20px;
+            width: 300px;
+            height: 200px;
+            background-color: rgba(0, 0, 0, 0.75);
+            border: 1px solid #9370db;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            z-index: 15;
+            font-family: 'Lucida Console', monospace;
+        }
+
+        #chat-history {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        #chat-history p {
+            margin: 0 0 5px 0;
+            word-wrap: break-word;
+        }
+
+        #chat-input-container {
+            display: flex;
+            border-top: 1px solid #9370db;
+        }
+
+        #chat-input {
+            flex-grow: 1;
+            border: none;
+            background: #222;
+            color: white;
+            padding: 8px;
+            outline: none;
+            border-bottom-left-radius: 9px;
+        }
+
+        #chat-send-btn {
+            border: none;
+            background: #9370db;
+            color: white;
+            padding: 0 15px;
+            cursor: pointer;
+            font-weight: bold;
+            border-bottom-right-radius: 9px;
+        }
+        #chat-send-btn:hover {
+            background: #8a2be2;
+        }
 
     </style>
 </head>
@@ -1097,6 +1154,17 @@
         <div id="person-label">Person</div>
     </div>
     
+    <div id="other-players-container"></div>
+    
+    <div id="chat-container" class="hidden">
+        <div id="chat-history"></div>
+        <div id="chat-input-container">
+            <input type="text" id="chat-input" placeholder="Say something..." maxlength="100">
+            <button id="chat-send-btn">Send</button>
+        </div>
+    </div>
+
+
     <!-- DIALOGS -->
     <div id="officer-message" class="dialog-container hidden">
         <div id="officer-emoji">👮</div>
