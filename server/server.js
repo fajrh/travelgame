@@ -1,5 +1,3 @@
-
-
 import { createServer } from 'http';
 import { randomUUID, createHash } from 'crypto';
 import { EventEmitter } from 'events';

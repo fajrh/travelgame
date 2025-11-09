@@ -232,6 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let hasPlayedMinigame = false;
     let haveMinigamesBeenUnlocked = false;
     
+    // --- Multiplayer State ---
     interface OtherPlayer {
         id: string;
         name: string;
@@ -260,6 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastBroadcastZone = 'arrival';
     let lastBroadcastDirection = 'right';
     let lastBroadcastAt = 0;
+    const RECONNECT_DELAY = 3000;
+    let wsConnectionAttempt = 0;
 
     // --- Data ---
     const flightData = [
@@ -301,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const POSITION_UPDATE_INTERVAL = 150;
     const POSITION_EPSILON = 2.5;
 
+    // --- Multiplayer & Networking ---
     function getCurrentZone(): string {
         return currentLocation === 'Toronto' ? 'arrival' : currentLocation;
     }
@@ -321,70 +325,166 @@ document.addEventListener('DOMContentLoaded', () => {
     function detectRuntimeMode(): string {
         const metaEnv = (import.meta as any)?.env;
         if (metaEnv?.MODE) return metaEnv.MODE;
-        if (typeof process !== 'undefined' && process?.env?.NODE_ENV) {
-            return process.env.NODE_ENV;
-        }
         const hostname = window.location.hostname;
         return hostname === 'localhost' || hostname === '127.0.0.1' ? 'development' : 'production';
     }
 
-    function normalisePath(pathname: string | undefined): string {
-        if (!pathname || pathname === '/') return '/';
-        if (!pathname.startsWith('/')) return `/${pathname}`;
-        return pathname;
-    }
-
-    const CLOUD_RUN_SERVICE_NAME = 'travelgame-codex-code-multiplayer-server-with-location-tracking';
-
-    function deriveCloudRunHost(hostname: string): string | null {
-        if (!hostname.endsWith('.run.app')) return null;
-        const match = hostname.match(/^([a-z0-9-]+)-([a-z0-9-]+)\.(.+)$/i);
-        if (!match) return null;
-        const [, , project, rest] = match;
-        if (!project || !rest) return null;
-        const derived = `${CLOUD_RUN_SERVICE_NAME}-${project}.${rest}`;
-        if (derived === hostname) return null;
-        return derived;
-    }
-
     function buildWebSocketCandidates(): string[] {
-        const urls: string[] = [];
+        const urls = new Set<string>();
         const metaEnv = (import.meta as any)?.env ?? {};
-        const globalOverride = (window as any).__TRAVELGAME_WS_URL__ as string | undefined;
-        const explicit = metaEnv.VITE_MULTIPLAYER_URL || metaEnv.VITE_WS_URL;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const hostname = window.location.hostname || 'localhost';
-        const port = metaEnv.VITE_MULTIPLAYER_PORT || metaEnv.VITE_WS_PORT || window.location.port;
-        const host = port ? `${hostname}:${port}` : window.location.host;
-        const path = normalisePath(metaEnv.VITE_MULTIPLAYER_PATH || metaEnv.VITE_WS_PATH || '/');
-
-        const mode = detectRuntimeMode();
-
-        const addCandidate = (value: string | undefined) => {
-            if (!value) return;
-            if (!urls.includes(value)) urls.push(value);
+        const add = (url: string | undefined) => {
+            if (url) urls.add(url);
         };
 
-        addCandidate(globalOverride);
-        addCandidate(explicit);
+        // Priority 1: Explicit overrides
+        add((window as any).__TRAVELGAME_WS_URL__);
+        add(metaEnv.VITE_MULTIPLAYER_URL || metaEnv.VITE_WS_URL);
 
-        if (mode === 'development') {
-            const devPort = metaEnv.VITE_MULTIPLAYER_PORT || metaEnv.VITE_WS_PORT || '8080';
-            const secureOverride = metaEnv.VITE_MULTIPLAYER_SECURE === 'true' || metaEnv.VITE_WS_SECURE === 'true';
-            const devProtocol = secureOverride ? 'wss:' : 'ws:';
-            addCandidate(`${devProtocol}//${hostname}:${devPort}${path}`);
+        // Priority 2: Standard derivation from current location
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const hostname = window.location.hostname || 'localhost';
+        const path = '/'; // Use root path for better proxy/interceptor compatibility
+
+        const port = window.location.port;
+        const host = port ? `${hostname}:${port}` : hostname;
+        add(`${protocol}//${host}${path}`);
+        
+        // Priority 3: Common local dev setup (server on 8080)
+        if (detectRuntimeMode() === 'development') {
+            add(`ws://${hostname}:8080${path}`);
         }
 
-        addCandidate(`${protocol}//${host}${path}`);
-
-        const cloudRunHost = deriveCloudRunHost(hostname);
-        if (cloudRunHost) {
-            addCandidate(`${protocol}//${cloudRunHost}${path}`);
-        }
-
-        return urls;
+        return Array.from(urls).filter(Boolean);
     }
+    
+    function scheduleReconnect() {
+        if (reconnectTimeoutId !== null) return;
+        // Try next candidate quickly, then back off to a longer delay
+        const delay = wsConnectionAttempt < buildWebSocketCandidates().length ? 500 : RECONNECT_DELAY;
+        reconnectTimeoutId = window.setTimeout(() => {
+            reconnectTimeoutId = null;
+            connectWebSocket();
+        }, delay);
+    }
+    
+    function connectWebSocket() {
+        if (typeof WebSocket === 'undefined') {
+            console.warn('WebSocket not supported. Multiplayer disabled.');
+            return;
+        }
+        
+        const candidates = buildWebSocketCandidates();
+        if (candidates.length === 0) {
+            console.warn('No WebSocket URL candidates found. Multiplayer disabled.');
+            return;
+        }
+        
+        // Cycle through candidates
+        const url = candidates[wsConnectionAttempt % candidates.length];
+        wsConnectionAttempt++;
+
+        if (ws) {
+            ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+            ws.close();
+        }
+
+        try {
+            ws = new WebSocket(url, 'travelgame.v1');
+        } catch (error) {
+            console.error(`Failed to create WebSocket for ${url}:`, error);
+            scheduleReconnect();
+            return;
+        }
+
+        ws.onopen = () => {
+            if (reconnectTimeoutId) {
+                clearTimeout(reconnectTimeoutId);
+                reconnectTimeoutId = null;
+            }
+            wsConnectionAttempt = 0; // Reset on successful connection
+            sendHello(true);
+        };
+
+        ws.onmessage = handleServerMessage;
+
+        ws.onclose = () => {
+            ws = null;
+            selfId = null;
+            scheduleReconnect();
+        };
+
+        ws.onerror = (err) => {
+            console.error('WebSocket error:', err);
+            // onclose will be called next, which will trigger reconnect logic
+            try { ws?.close(); } catch(e){}
+        };
+    }
+
+    const handleServerMessage = (event: MessageEvent) => {
+        let payload: any;
+        try {
+            payload = JSON.parse(event.data);
+        } catch (error) {
+            console.warn('Ignoring non-JSON message from server', error);
+            return;
+        }
+
+        if (!payload || typeof payload.type !== 'string') return;
+
+        switch (payload.type) {
+            case 'hello_ack':
+                if (typeof payload.id === 'string') {
+                    selfId = payload.id;
+                }
+                break;
+            case 'welcome': {
+                if (payload.self?.id) {
+                    selfId = payload.self.id;
+                }
+                clearOtherPlayers();
+                if (Array.isArray(payload.players)) {
+                    payload.players.forEach((player: any) => updateOtherPlayerFromState(player));
+                }
+                chatHistory.innerHTML = '';
+                if (Array.isArray(payload.chat)) {
+                    payload.chat.forEach((entry: any) => {
+                        const senderColor = entry.playerId === selfId ? 'yellow' : colorForPlayer(entry.playerId);
+                        addChatMessage(entry.name ?? 'Traveler', entry.message ?? '', senderColor);
+                    });
+                }
+                break;
+            }
+            case 'player_joined':
+                updateOtherPlayerFromState(payload.player ?? {});
+                break;
+            case 'player_moved':
+                updateOtherPlayerFromState(payload.player ?? {});
+                break;
+            case 'player_left':
+                if (typeof payload.id === 'string') removeOtherPlayer(payload.id);
+                break;
+            case 'chat': {
+                const entry = payload.entry ?? payload;
+                const senderColor = entry.playerId === selfId ? 'yellow' : colorForPlayer(entry.playerId);
+                addChatMessage(entry.name ?? 'Traveler', entry.message ?? '', senderColor);
+                if (entry.playerId && entry.playerId !== selfId) showChatBubble(entry.playerId, entry.message ?? '');
+                break;
+            }
+            case 'ping':
+                try {
+                    ws?.send(JSON.stringify({ type: 'pong', timestamp: payload.timestamp }));
+                } catch (error) {
+                    console.warn('Unable to send pong', error);
+                }
+                break;
+            case 'error':
+                console.warn('Server error:', payload.message ?? payload);
+                break;
+            default:
+                break;
+        }
+    };
 
     function createOtherPlayerElement(state: { id: string; name?: string; emoji?: string; zone?: string; x?: number; y?: number; direction?: string; }): OtherPlayer {
         const container = document.createElement('div');
@@ -463,12 +563,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const hideTimer = window.setTimeout(() => {
             player.bubbleElement.classList.remove('visible');
-        }, 3000);
+        }, 4000);
 
         const removeTimer = window.setTimeout(() => {
             player.bubbleElement.classList.add('hidden');
             player.bubbleElement.textContent = '';
-        }, 3500);
+        }, 4500);
 
         chatBubbles.set(playerId, { hideTimer, removeTimer });
     }
@@ -478,30 +578,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const existing = otherPlayers.get(state.id) ?? createOtherPlayerElement(state);
 
-        existing.name = state.name ?? existing.name;
-        existing.labelElement.textContent = existing.name;
+        if(state.name && state.name !== existing.name) {
+            existing.name = state.name;
+            existing.labelElement.textContent = existing.name;
+        }
 
         if (state.emoji && state.emoji !== existing.emoji) {
             existing.emoji = state.emoji;
             existing.emojiElement.textContent = existing.emoji;
         }
 
-        if (typeof state.x === 'number') {
-            existing.targetX = state.x;
-        }
-        if (typeof state.y === 'number') {
-            existing.targetY = state.y;
-        }
-
-        if (typeof state.zone === 'string') {
+        if (typeof state.x === 'number') existing.targetX = state.x;
+        if (typeof state.y === 'number') existing.targetY = state.y;
+        
+        if (typeof state.zone === 'string' && state.zone !== existing.zone) {
             existing.zone = state.zone;
             updateOtherPlayerVisibility(existing);
         }
 
-        if (state.direction === 'right') {
+        if (state.direction === 'right' && !existing.isFacingRight) {
             existing.isFacingRight = true;
             existing.emojiElement.style.transform = 'scaleX(-1)';
-        } else if (state.direction === 'left') {
+        } else if (state.direction === 'left' && existing.isFacingRight) {
             existing.isFacingRight = false;
             existing.emojiElement.style.transform = 'scaleX(1)';
         }
@@ -515,7 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function sendHello(force = false) {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        if (!force && !selfId && Date.now() - lastBroadcastAt < 100) return;
+        if (!force && Date.now() - lastBroadcastAt < 100) return;
 
         const zone = getCurrentZone();
         const direction = isFacingRight ? 'right' : 'left';
@@ -530,10 +628,6 @@ document.addEventListener('DOMContentLoaded', () => {
             direction,
         }));
 
-        lastBroadcastX = x;
-        lastBroadcastY = y;
-        lastBroadcastZone = zone;
-        lastBroadcastDirection = direction;
         lastBroadcastAt = Date.now();
     }
 
@@ -566,155 +660,6 @@ document.addEventListener('DOMContentLoaded', () => {
         lastBroadcastAt = now;
     }
 
-    function scheduleReconnect(delay = 2000) {
-        if (reconnectTimeoutId !== null) return;
-        reconnectTimeoutId = window.setTimeout(() => {
-            reconnectTimeoutId = null;
-            connectWebSocket();
-        }, delay);
-    }
-
-    const handleServerMessage = (event: MessageEvent) => {
-        let payload: any;
-        try {
-            payload = JSON.parse(event.data);
-        } catch (error) {
-            console.warn('Ignoring non-JSON message from server', error);
-            return;
-        }
-
-        if (!payload || typeof payload.type !== 'string') return;
-
-        switch (payload.type) {
-            case 'hello_ack':
-                if (typeof payload.id === 'string') {
-                    selfId = payload.id;
-                }
-                break;
-            case 'welcome': {
-                if (payload.self?.id) {
-                    selfId = payload.self.id;
-                    updateOtherPlayerFromState(payload.self);
-                }
-                clearOtherPlayers();
-                if (Array.isArray(payload.players)) {
-                    payload.players.forEach((player: any) => updateOtherPlayerFromState(player));
-                }
-                chatHistory.innerHTML = '';
-                if (Array.isArray(payload.chat)) {
-                    payload.chat.forEach((entry: any) => {
-                        const senderColor = entry.playerId === selfId ? 'yellow' : '#90EE90';
-                        addChatMessage(entry.name ?? 'Traveler', entry.message ?? '', senderColor);
-                    });
-                }
-                break;
-            }
-            case 'player_joined':
-                updateOtherPlayerFromState(payload.player ?? {});
-                break;
-            case 'player_moved':
-                updateOtherPlayerFromState(payload.player ?? {});
-                break;
-            case 'player_left':
-                if (typeof payload.id === 'string') removeOtherPlayer(payload.id);
-                break;
-            case 'chat': {
-                const entry = payload.entry ?? payload;
-                const senderColor = entry.playerId === selfId ? 'yellow' : '#90EE90';
-                addChatMessage(entry.name ?? 'Traveler', entry.message ?? '', senderColor);
-                if (entry.playerId) showChatBubble(entry.playerId, entry.message ?? '');
-                break;
-            }
-            case 'ping':
-                try {
-                    ws?.send(JSON.stringify({ type: 'pong', timestamp: payload.timestamp }));
-                } catch (error) {
-                    console.warn('Unable to send pong', error);
-                }
-                break;
-            case 'error':
-                console.warn('Server error:', payload.message ?? payload);
-                break;
-            default:
-                break;
-        }
-    };
-
-    function connectWebSocket(startIndex = 0) {
-        if (typeof WebSocket === 'undefined') {
-            console.warn('WebSocket not supported in this environment. Multiplayer disabled.');
-            return;
-        }
-
-        const candidates = buildWebSocketCandidates();
-        if (!candidates.length) {
-            console.warn('No WebSocket endpoints available. Multiplayer disabled.');
-            return;
-        }
-
-        if (startIndex >= candidates.length) {
-            scheduleReconnect();
-            return;
-        }
-
-        if (ws) {
-            ws.removeEventListener('message', handleServerMessage);
-            try {
-                ws.close();
-            } catch (error) {
-                console.warn('Error while closing previous WebSocket', error);
-            }
-            ws = null;
-        }
-
-        const url = candidates[startIndex];
-        let opened = false;
-        let socket: WebSocket;
-        try {
-            socket = new WebSocket(url, 'travelgame.v1');
-        } catch (error) {
-            console.error('Failed to create WebSocket connection', error);
-            connectWebSocket(startIndex + 1);
-            return;
-        }
-
-        ws = socket;
-
-        socket.addEventListener('open', () => {
-            opened = true;
-            if (reconnectTimeoutId !== null) {
-                window.clearTimeout(reconnectTimeoutId);
-                reconnectTimeoutId = null;
-            }
-            sendHello(true);
-        });
-
-        socket.addEventListener('message', handleServerMessage);
-
-        socket.addEventListener('close', () => {
-            socket.removeEventListener('message', handleServerMessage);
-            if (ws === socket) {
-                ws = null;
-                selfId = null;
-            }
-
-            if (opened) {
-                scheduleReconnect();
-            } else {
-                connectWebSocket(startIndex + 1);
-            }
-        });
-
-        socket.addEventListener('error', () => {
-            if (!opened) {
-                try {
-                    socket.close();
-                } catch (error) {
-                    console.warn('Unable to close failed WebSocket', error);
-                }
-            }
-        });
-    }
 
     // --- Utility Functions ---
     function speak(text: string, lang = 'en-US'): Promise<void> {
@@ -867,8 +812,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance > 1) {
-            x += dx * 0.05;
-            y += dy * 0.05;
+            x += dx * 0.08;
+            y += dy * 0.08;
             
             if (dx > 1 && !isFacingRight) {
                 isFacingRight = true;
@@ -887,34 +832,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Other players movement (server-driven)
         otherPlayers.forEach(player => {
-            if (player.zone !== getCurrentZone()) {
-                player.element.style.opacity = '0';
-                return;
-            }
-
             const pdx = player.targetX - player.x;
             const pdy = player.targetY - player.y;
-            const distance = Math.sqrt(pdx * pdx + pdy * pdy);
-
-            if (distance > 0.5) {
-                const step = Math.min(distance, 6);
-                const factor = (step / Math.max(distance, 1)) * 0.2;
-                player.x += pdx * factor;
-                player.y += pdy * factor;
+            const pDist = Math.sqrt(pdx*pdx + pdy*pdy);
+            
+            if (pDist > 1) {
+                player.x += pdx * 0.08;
+                player.y += pdy * 0.08;
             } else {
                 player.x = player.targetX;
                 player.y = player.targetY;
             }
 
-            if (pdx > 0.5 && !player.isFacingRight) {
-                player.isFacingRight = true;
-                player.emojiElement.style.transform = 'scaleX(-1)';
-            } else if (pdx < -0.5 && player.isFacingRight) {
-                player.isFacingRight = false;
-                player.emojiElement.style.transform = 'scaleX(1)';
-            }
-            
-            player.element.style.opacity = '1';
             player.element.style.left = `${player.x}px`;
             player.element.style.top = `${player.y}px`;
         });
@@ -930,7 +859,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         requestAnimationFrame(gameLoop);
     }
-    
+
     // --- Chat Logic ---
     function addChatMessage(sender: string, message: string, color = 'white') {
         const p = document.createElement('p');
@@ -945,6 +874,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (ws && ws.readyState === WebSocket.OPEN && selfId) {
                 ws.send(JSON.stringify({ type: 'chat', message }));
             } else {
+                // Fallback for when not connected - show only to self
                 addChatMessage(playerName, message, 'yellow');
             }
             chatInput.value = '';
@@ -993,8 +923,6 @@ document.addEventListener('DOMContentLoaded', () => {
         airportContainer.classList.remove('hidden');
         mfGroupContainer.classList.remove('hidden');
         document.getElementById('home-bottom-left-controls')?.classList.remove('hidden');
-        otherPlayersContainer.classList.remove('hidden');
-        chatContainer.classList.remove('hidden');
         
         // Reset luggage position to its CSS default
         luggageContainer.style.left = '';
@@ -1746,7 +1674,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </button>
                         `).join('');
                     }
-                     itemsHTML += `<button class="gift-item button-14 recipe-item" role="button" data-name="${flight.recipe.name}" data-type="recipe" id="recipe-btn-${flight.recipe.name.replace(/\s+/g, '-')}}">
+                     itemsHTML += `<button class="gift-item button-14 recipe-item" role="button" data-name="${flight.recipe.name}" data-type="recipe" id="recipe-btn-${flight.recipe.name.replace(/\s+/g, '-')})}">
                         📖 ${flight.recipe.name}<br>
                         $${flight.recipe.cost}
                     </button>`;
