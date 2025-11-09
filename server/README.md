@@ -1,6 +1,10 @@
 # Multiplayer Server
 
-This directory contains the lightweight Node.js WebSocket server that keeps the travel game in sync across players. It relies solely on built-in Node.js modules, so no additional dependencies are required beyond the tooling already used for the frontend.
+This directory contains the lightweight Node.js polling server that keeps the
+travel game in sync across players. Instead of WebSockets, the server persists
+all player locations and chat history to `chatlog.txt` (a JSON file) and writes
+an updated snapshot at least every five seconds. Clients simply POST their
+changes and poll the file on a steady cadence.
 
 ## Running locally
 
@@ -9,39 +13,44 @@ npm install
 npm start
 ```
 
-The server listens on the port in the `PORT` environment variable (defaults to `8080`). When deploying to services such as Google Cloud Run or App Engine, the provided `npm start` script satisfies their expectations for a startup command.
+The server listens on the port in the `PORT` environment variable (defaults to
+`8080`). When deploying to services such as Google Cloud Run or App Engine, the
+provided `npm start` script satisfies their expectations for a startup command.
 
 ## HTTP endpoints
 
-| Endpoint   | Description |
-|------------|-------------|
-| `GET /` or `GET /status` | Returns a short summary with current lobby counts and available endpoints. |
-| `GET /healthz` | Liveness probe that reports the number of tracked players. |
-| `GET /state` | Returns the current list of players and recent chat messages. |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/status` | `GET` | Summary with current lobby counts and available endpoints. |
+| `/healthz` | `GET` | Liveness probe that reports the number of tracked players. |
+| `/state` | `GET` | Returns the same JSON payload that is written to `chatlog.txt`. |
+| `/chatlog.txt` | `GET` | Direct access to the persisted JSON file containing players and chat. |
+| `/update` | `POST` | Accepts the player's latest position, city, emoji, etc. |
+| `/chat` | `POST` | Adds a chat entry for the sender's current city. |
 
-All responses include permissive CORS headers, and the server will also reply to `HEAD` and `OPTIONS` requests for observability tooling.
+All responses include permissive CORS headers, and the server will also reply to
+`OPTIONS` requests for observability tooling.
 
-## WebSocket contract
+## State persistence
 
-1. **Connect** to `ws://<host>:<port>`.
-2. **Send** a `hello` message to register:
-   ```json
-   {
-     "type": "hello",
-     "name": "Traveler",
-     "x": 0,
-     "y": 0,
-     "zone": "arrival",
-     "direction": "down",
-     "emoji": "🧳"
-   }
-   ```
-3. The server responds with `welcome`, the current lobby snapshot, and continues to broadcast:
-   - `player_joined`
-   - `player_moved`
-   - `player_left`
-   - `chat`
+The server keeps an in-memory snapshot of players and the most recent chat
+messages. Every change marks the state as "dirty", triggering a write to
+`chatlog.txt` within five seconds (or immediately when `/chatlog.txt` or
+`/state` is requested). Each record contains:
 
-Send `update_position` and `chat` messages to share movement updates or IRC-style chat lines with the rest of the room.
+- Player ID, name, emoji, coordinates, facing direction, zone, and city.
+- Chat message ID, author, timestamp, city, and the sanitised text.
 
-The server periodically emits `ping` messages; reply with a `pong` payload to keep the connection active if the client is idle.
+Stale players that stop checking in are automatically removed after 15 seconds
+of inactivity so the log stays accurate.
+
+## Polling workflow
+
+Clients follow a simple loop:
+
+1. POST `/update` with their latest position, emoji, and city information.
+2. Fetch `/chatlog.txt` to receive the complete snapshot for their city.
+3. POST `/chat` whenever the user submits a new message.
+
+This approach keeps deployment friction low while still supporting a shared
+multiplayer experience.
