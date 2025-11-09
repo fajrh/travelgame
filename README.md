@@ -18,3 +18,16 @@ View your app in AI Studio: https://ai.studio/apps/drive/1ZxSpZ3j2AqvYDjauW-aW78
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+### Multiplayer server
+
+The WebSocket server lives in [`server/server.js`](server/server.js) with full
+setup details in [`server/README.md`](server/README.md). To run it locally while
+developing the client, launch it in a separate terminal:
+
+```bash
+npm start
+```
+
+The server listens on port `8080` by default and exposes HTTP diagnostics as
+well as the WebSocket endpoint consumed by the client.
