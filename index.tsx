@@ -231,11 +231,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let workerIntervalId: number | null = null;
     let hasPlayedMinigame = false;
     let haveMinigamesBeenUnlocked = false;
-    let otherPlayers: OtherPlayer[] = [];
-    let chatBotIntervalId: number | null = null;
+    
+    // Multiplayer State
+    let otherPlayers = new Map<string, OtherPlayer>();
+    let ws: WebSocket | null = null;
+    let selfId: string | null = null;
+    let lastPositionSent = 0;
 
     interface OtherPlayer {
-        id: number;
+        id: string;
         name: string;
         emoji: string;
         x: number;
@@ -246,6 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
         element: HTMLElement;
         emojiElement: HTMLElement;
         color: string;
+        zone: string;
     }
 
     // --- Data ---
@@ -454,14 +459,34 @@ document.addEventListener('DOMContentLoaded', () => {
         personContainer.style.left = `${x}px`;
         personContainer.style.top = `${y}px`;
 
-        // Other players movement (simulation)
+        // Send throttled position updates to server
+        const now = Date.now();
+        if (now - lastPositionSent > 100 && ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'update_position',
+                x,
+                y,
+                zone: currentLocation,
+                direction: isFacingRight ? 'right' : 'left',
+            }));
+            lastPositionSent = now;
+        }
+
+        // Other players movement (from server)
         otherPlayers.forEach(p => {
+            // Hide players in different zones
+            if (p.zone !== currentLocation) {
+                p.element.style.display = 'none';
+                return;
+            }
+            p.element.style.display = '';
+
             const pdx = p.targetX - p.x;
             const pdy = p.targetY - p.y;
             const pDist = Math.sqrt(pdx*pdx + pdy*pdy);
             if (pDist > 1) {
-                p.x += pdx * 0.03;
-                p.y += pdy * 0.03;
+                p.x += pdx * 0.05;
+                p.y += pdy * 0.05;
                  if (pdx > 1 && !p.isFacingRight) {
                     p.isFacingRight = true;
                     p.emojiElement.style.transform = 'scaleX(-1)';
@@ -469,10 +494,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     p.isFacingRight = false;
                     p.emojiElement.style.transform = 'scaleX(1)';
                 }
-            } else {
-                // Set new target when reached
-                p.targetX = Math.random() * window.innerWidth;
-                p.targetY = Math.random() * window.innerHeight;
             }
             p.element.style.left = `${p.x}px`;
             p.element.style.top = `${p.y}px`;
@@ -488,40 +509,150 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(gameLoop);
     }
     
-    // --- Multiplayer Simulation ---
-    function initializeOtherPlayers() {
-        const names = [
-            { name: 'CoolCat', emoji: '😎', color: '#00FFFF' },
-            { name: 'JetSetter', emoji: '🤠', color: '#FFD700' },
-            { name: 'Wanderer', emoji: '🧑‍🚀', color: '#90EE90' },
-            { name: 'Globetrotter', emoji: '🧐', color: '#FFB6C1' }
-        ];
+    // --- Multiplayer & WebSocket Logic ---
+    const playerColors = ['#00FFFF', '#FFD700', '#90EE90', '#FFB6C1', '#FFA07A', '#20B2AA', '#87CEFA'];
+    let colorIndex = 0;
 
-        names.forEach((p, i) => {
-            const startX = Math.random() * window.innerWidth;
-            const startY = Math.random() * window.innerHeight;
-            const playerDiv = document.createElement('div');
-            playerDiv.className = 'other-player';
-            playerDiv.innerHTML = `
-                <div class="other-player-emoji">${p.emoji}</div>
-                <div class="other-player-label">${p.name}</div>
-            `;
-            otherPlayersContainer.appendChild(playerDiv);
+    function addOtherPlayer(playerData: any) {
+        const playerDiv = document.createElement('div');
+        playerDiv.className = 'other-player';
+        playerDiv.innerHTML = `
+            <div class="other-player-emoji">${playerData.emoji}</div>
+            <div class="other-player-label">${playerData.name}</div>
+        `;
+        otherPlayersContainer.appendChild(playerDiv);
+        
+        const color = playerColors[colorIndex % playerColors.length];
+        colorIndex++;
 
-            otherPlayers.push({
-                id: i + 1,
-                name: p.name,
-                emoji: p.emoji,
-                x: startX,
-                y: startY,
-                targetX: Math.random() * window.innerWidth,
-                targetY: Math.random() * window.innerHeight,
-                isFacingRight: false,
-                element: playerDiv,
-                emojiElement: playerDiv.querySelector('.other-player-emoji') as HTMLElement,
-                color: p.color
-            });
+        otherPlayers.set(playerData.id, {
+            id: playerData.id,
+            name: playerData.name,
+            emoji: playerData.emoji,
+            x: playerData.x,
+            y: playerData.y,
+            targetX: playerData.x,
+            targetY: playerData.y,
+            isFacingRight: playerData.direction === 'right',
+            element: playerDiv,
+            emojiElement: playerDiv.querySelector('.other-player-emoji') as HTMLElement,
+            color: color,
+            zone: playerData.zone,
         });
+    }
+
+    function removeOtherPlayer(playerId: string) {
+        const player = otherPlayers.get(playerId);
+        if (player) {
+            player.element.remove();
+            otherPlayers.delete(playerId);
+        }
+    }
+
+    function updateOtherPlayerPosition(playerData: any) {
+        const player = otherPlayers.get(playerData.id);
+        if (player) {
+            player.targetX = playerData.x;
+            player.targetY = playerData.y;
+            player.zone = playerData.zone;
+            // Handle name updates that are sent via the move event
+            if (playerData.name && player.name !== playerData.name) {
+                player.name = playerData.name;
+                const label = player.element.querySelector('.other-player-label');
+                if (label) {
+                    label.textContent = player.name;
+                }
+            }
+        }
+    }
+
+    function connectWebSocket() {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        let host = window.location.host;
+
+        // When running from file://, host is empty. Default to localhost for dev.
+        // Also, when running in dev mode via Vite, the client is on a different port (3000)
+        // than the WebSocket server (8080).
+        if ((import.meta as any).env?.DEV || !host) {
+            host = `${window.location.hostname || 'localhost'}:8080`;
+        }
+        
+        const wsUrl = `${proto}//${host}`;
+
+        try {
+             ws = new WebSocket(wsUrl);
+        } catch(e) {
+            console.error(`Failed to construct WebSocket with URL ${wsUrl}:`, e);
+            // Attempt to reconnect after a delay if construction fails.
+            setTimeout(connectWebSocket, 3000);
+            return;
+        }
+
+        ws.onopen = () => {
+            console.log('WebSocket connected');
+            ws?.send(JSON.stringify({
+                type: 'hello',
+                name: playerName,
+                x,
+                y,
+                zone: currentLocation,
+                direction: isFacingRight ? 'right' : 'left',
+                emoji: '🚶'
+            }));
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                switch (msg.type) {
+                    case 'welcome':
+                        selfId = msg.self.id;
+                        otherPlayersContainer.innerHTML = '';
+                        otherPlayers.clear();
+                        msg.players.forEach((p: any) => {
+                            if (p.id !== selfId) addOtherPlayer(p);
+                        });
+                        chatHistory.innerHTML = '';
+                        msg.chat.forEach((c: any) => {
+                             const sender = otherPlayers.get(c.playerId);
+                             const color = sender ? sender.color : (c.playerId === selfId ? 'yellow' : '#FFFFFF');
+                             addChatMessage(c.name, c.message, color);
+                        });
+                        break;
+                    case 'player_joined':
+                        if (msg.player.id !== selfId) addOtherPlayer(msg.player);
+                        break;
+                    case 'player_left':
+                        removeOtherPlayer(msg.id);
+                        break;
+                    case 'player_moved':
+                        if (msg.player.id !== selfId) updateOtherPlayerPosition(msg.player);
+                        break;
+                    case 'chat': {
+                        const sender = otherPlayers.get(msg.entry.playerId);
+                        const color = msg.entry.playerId === selfId ? 'yellow' : (sender ? sender.color : '#FFFFFF');
+                        addChatMessage(msg.entry.name, msg.entry.message, color);
+                        break;
+                    }
+                    case 'ping':
+                        ws?.send(JSON.stringify({ type: 'pong' }));
+                        break;
+                }
+            } catch (e) {
+                console.error('Failed to parse WebSocket message:', e);
+            }
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket disconnected. Attempting to reconnect...');
+            ws = null;
+            setTimeout(connectWebSocket, 3000);
+        };
+
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            ws?.close();
+        };
     }
 
     // --- Chat Logic ---
@@ -531,33 +662,14 @@ document.addEventListener('DOMContentLoaded', () => {
         chatHistory.appendChild(p);
         chatHistory.scrollTop = chatHistory.scrollHeight;
     }
-
-    function startChatBot() {
-        if (chatBotIntervalId) clearInterval(chatBotIntervalId);
-        const chatPhrases = [
-            "Hey everyone!", "Where is the best place to visit next?", "Just got back from Paris!",
-            "Saving up for that Sydney trip.", "Has anyone played the gem game?", "lol", "This airport is cool.",
-            "I need more money for a flight to Kyoto.", "Does anyone have a spare passport? jk", "Toronto is nice!"
-        ];
-
-        const sendBotMessage = () => {
-            if (currentLocation === 'Toronto') {
-                const randomPlayer = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
-                const randomPhrase = chatPhrases[Math.floor(Math.random() * chatPhrases.length)];
-                addChatMessage(randomPlayer.name, randomPhrase, randomPlayer.color);
-            }
-            // Schedule next message
-            const nextDelay = 5000 + Math.random() * 7000;
-            chatBotIntervalId = window.setTimeout(sendBotMessage, nextDelay);
-        };
-        
-        sendBotMessage(); // Start the loop
-    }
     
     function handleSendMessage() {
         const message = chatInput.value.trim();
-        if (message) {
-            addChatMessage(playerName, message, 'yellow');
+        if (message && ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'chat',
+                message: message
+            }));
             chatInput.value = '';
         }
     }
@@ -569,6 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
         airportContainer.classList.add('hidden');
         mfGroupContainer.classList.add('hidden');
         document.getElementById('home-bottom-left-controls')?.classList.add('hidden');
+        // Keep other players/chat hidden in cities for simplicity
         otherPlayersContainer.classList.add('hidden');
         chatContainer.classList.add('hidden');
         
@@ -1372,6 +1485,18 @@ document.addEventListener('DOMContentLoaded', () => {
     playerNameInput.addEventListener('input', () => {
         playerName = playerNameInput.value.trim() || 'Person';
         personLabel.textContent = playerName;
+        if (ws?.readyState === WebSocket.OPEN) {
+            // Re-register with the new name
+            ws.send(JSON.stringify({
+                type: 'hello',
+                name: playerName,
+                x: x,
+                y: y,
+                zone: currentLocation,
+                direction: isFacingRight ? 'right' : 'left',
+                emoji: '🚶'
+            }));
+        }
     });
 
     sfxMuteBtn.addEventListener('click', () => {
@@ -1390,6 +1515,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chatSendBtn.addEventListener('click', handleSendMessage);
     chatInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
+            e.preventDefault();
             handleSendMessage();
         }
     });
@@ -1454,8 +1580,20 @@ document.addEventListener('DOMContentLoaded', () => {
     playSound('welcome');
     updateScore(500);
     updateMinigameUnlockStatus();
-    initializeOtherPlayers();
-    startChatBot();
+    connectWebSocket();
     showHomeView();
     gameLoop();
+
+    // --- Hide Loading Screen ---
+    const loadingScreen = document.getElementById('loading-screen') as HTMLElement;
+    if (loadingScreen) {
+        // Use a small timeout to let the browser render the initial state
+        setTimeout(() => {
+            loadingScreen.style.opacity = '0';
+            // Remove from DOM after transition for performance
+            loadingScreen.addEventListener('transitionend', () => {
+                loadingScreen.remove();
+            }, { once: true });
+        }, 200);
+    }
 });

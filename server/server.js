@@ -1,10 +1,34 @@
+
+
 import { createServer } from 'http';
 import { randomUUID, createHash } from 'crypto';
 import { EventEmitter } from 'events';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import fs from 'fs';
 
 const PORT = Number.parseInt(process.env.PORT ?? '8080', 10);
 const PING_INTERVAL = 30000;
 const CHAT_HISTORY_LIMIT = 100;
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '..', 'dist');
+
+const mimeTypes = {
+    '.html': 'text/html',
+    '.js': 'text/javascript',
+    '.css': 'text/css',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.json': 'application/json',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.ico': 'image/x-icon',
+};
+
 
 const players = new Map(); // id -> player state
 const sockets = new Map(); // ws -> metadata
@@ -230,66 +254,57 @@ const server = createServer((req, res) => {
     return;
   }
 
-  const method = req.method ?? 'GET';
-  const allowBody = method !== 'HEAD';
-  if (method !== 'GET' && method !== 'HEAD') {
-    writeJson(
-      res,
-      405,
-      {
-        error: 'method_not_allowed',
-        message: 'Only GET, HEAD, and OPTIONS are supported.',
-      },
-      { allowBody, headers: { allow: 'GET, HEAD, OPTIONS' } }
-    );
-    return;
-  }
-
-  const { pathname } = new URL(req.url, 'http://localhost');
-
-  if (pathname === '/' || pathname === '/status') {
-    writeJson(
-      res,
-      200,
-      {
+  const { pathname } = new URL(req.url, `http://${req.headers.host}`);
+  
+  // API routes
+  if (pathname === '/status') {
+    writeJson(res, 200, {
         status: 'ok',
         uptime: process.uptime(),
         players: players.size,
         chatMessages: chatHistory.length,
         endpoints: ['/healthz', '/state'],
-      },
-      { allowBody }
-    );
+      });
     return;
   }
-
   if (pathname === '/healthz') {
-    writeJson(res, 200, { status: 'ok', players: players.size }, { allowBody });
+    writeJson(res, 200, { status: 'ok', players: players.size });
     return;
   }
-
   if (pathname === '/state') {
-    writeJson(
-      res,
-      200,
-      {
+    writeJson(res, 200, {
         players: Array.from(players.values()),
         chat: chatHistory,
-      },
-      { allowBody }
-    );
+      });
     return;
   }
 
-  writeJson(
-    res,
-    404,
-    {
-      error: 'not_found',
-      message: 'Unknown endpoint. Try /healthz or /state.',
-    },
-    { allowBody }
-  );
+  // Static file serving
+  const requestedPath = pathname === '/' ? '/index.html' : pathname;
+  const filePath = path.join(distPath, requestedPath);
+  const ext = path.extname(filePath).toLowerCase();
+  const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+  fs.readFile(filePath, (error, content) => {
+    if (error) {
+      if (error.code === 'ENOENT') {
+        // If the file is not found, serve index.html as a fallback for client-side routing.
+        fs.readFile(path.join(distPath, 'index.html'), (err, indexContent) => {
+          if (err) {
+            writeJson(res, 500, { error: 'internal_error', message: `Could not read index.html`});
+          } else {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(indexContent, 'utf-8');
+          }
+        });
+      } else {
+        writeJson(res, 500, { error: 'internal_error', message: `Server error: ${error.code}` });
+      }
+    } else {
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(content, 'utf-8');
+    }
+  });
 });
 
 const wss = new SimpleWebSocketServer(server);
@@ -390,20 +405,12 @@ setInterval(() => {
 }, PING_INTERVAL);
 
 function handleHello(ws, meta, payload) {
-  if (meta.isRegistered) {
-    send(ws, {
-      type: 'error',
-      error: 'already_registered',
-      message: 'Client already registered.',
-    });
-    return;
-  }
-
   const name = sanitiseName(payload.name);
-  meta.name = name;
-  meta.isRegistered = true;
+  meta.name = name; // Always update the name in the socket metadata
 
-  const initialState = {
+  const player = players.get(meta.id);
+
+  const playerStateData = {
     id: meta.id,
     name,
     x: clampNumber(payload.x ?? 0, -5000, 5000),
@@ -415,18 +422,28 @@ function handleHello(ws, meta, payload) {
     lastUpdated: Date.now(),
   };
 
-  players.set(meta.id, initialState);
+  if (meta.isRegistered && player) {
+    // This is an update (e.g., name change).
+    Object.assign(player, playerStateData);
+    // Use player_moved to broadcast the full update to all clients
+    broadcast({ type: 'player_moved', player });
+    return;
+  }
+  
+  // This is a new registration.
+  meta.isRegistered = true;
+  players.set(meta.id, playerStateData);
 
   send(ws, {
     type: 'welcome',
-    self: initialState,
+    self: playerStateData,
     players: Array.from(players.values()),
     chat: chatHistory,
   });
 
   broadcastExcept(ws, {
     type: 'player_joined',
-    player: initialState,
+    player: playerStateData,
   });
 }
 
