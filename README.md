@@ -2,19 +2,26 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# Travel Game
 
-This contains everything you need to run your app locally.
+A refreshed Vite + React dashboard for planning playful world adventures. The interface bundles a destination picker, a running travel log, and a collaborative chat panel.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1cxTGJMTHV2IsSHVbxeTs1rWivT6-pQh_
+## Getting started
 
-## Run Locally
+```bash
+npm install
+npm run dev
+```
 
-**Prerequisites:**  Node.js
+- `npm run dev` – start the Vite development server
+- `npm run build` – produce a production build in `dist`
+- `npm run preview` – preview the built app locally
 
+## Features
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- 🎯 **Destination planner** – browse curated cities and highlight the current itinerary
+- 🧭 **Travel log** – track visited locations, rename your traveler, and see the souvenir shelf grow
+- 💬 **Terminal chat** – share plans with your crew (messages persist for the current session)
+- 🌗 **Polished visuals** – glassmorphism-inspired styling with responsive layouts down to mobile widths
+
+The codebase is organized into small, typed components under `src/` for easier maintenance and extension.
