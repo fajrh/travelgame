@@ -21,13 +21,16 @@ View your app in AI Studio: https://ai.studio/apps/drive/1ZxSpZ3j2AqvYDjauW-aW78
 
 ### Multiplayer server
 
-The WebSocket server lives in [`server/server.js`](server/server.js) with full
-setup details in [`server/README.md`](server/README.md). To run it locally while
-developing the client, launch it in a separate terminal:
+The polling server lives in [`server/server.js`](server/server.js) with full
+setup details in [`server/README.md`](server/README.md). It keeps a shared
+`chatlog.txt` file up to date with every player's position and recent chat
+messages so that each client can poll updates every five seconds. To run it
+locally while developing the client, launch it in a separate terminal:
 
 ```bash
 npm start
 ```
 
-The server listens on port `8080` by default and exposes HTTP diagnostics as
-well as the WebSocket endpoint consumed by the client.
+The server listens on port `8080` by default and exposes simple JSON endpoints
+(`GET /chatlog.txt`, `GET /state`, `POST /update`, `POST /chat`) as well as the
+usual diagnostics routes.
