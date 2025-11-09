@@ -700,7 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chatHistory.appendChild(p);
         chatHistory.scrollTop = chatHistory.scrollHeight;
     }
-    
+
     function handleSendMessage() {
         const message = chatInput.value.trim();
         if (message && ws?.readyState === WebSocket.OPEN) {
