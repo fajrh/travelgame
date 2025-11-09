@@ -237,6 +237,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let ws: WebSocket | null = null;
     let selfId: string | null = null;
     let lastPositionSent = 0;
+    type ChatBubbleEntry = { element: HTMLElement; hideTimer: number; removeTimer?: number };
+    const chatBubbles = new Map<string, ChatBubbleEntry>();
 
     interface OtherPlayer {
         id: string;
@@ -547,6 +549,16 @@ document.addEventListener('DOMContentLoaded', () => {
             player.element.remove();
             otherPlayers.delete(playerId);
         }
+
+        const bubble = chatBubbles.get(playerId);
+        if (bubble) {
+            clearTimeout(bubble.hideTimer);
+            if (bubble.removeTimer !== undefined) {
+                clearTimeout(bubble.removeTimer);
+            }
+            bubble.element.remove();
+            chatBubbles.delete(playerId);
+        }
     }
 
     function updateOtherPlayerPosition(playerData: any) {
@@ -568,13 +580,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function connectWebSocket() {
         const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        let host = window.location.host;
+        let host: string;
 
-        // When running from file://, host is empty. Default to localhost for dev.
-        // Also, when running in dev mode via Vite, the client is on a different port (3000)
-        // than the WebSocket server (8080).
-        if ((import.meta as any).env?.DEV || !host) {
-            host = `${window.location.hostname || 'localhost'}:8080`;
+        // Fix for TypeScript error: Property 'env' does not exist on type 'ImportMeta'.
+        // This occurs when Vite's client types are not loaded. Casting to `any` is a workaround.
+        if ((import.meta as any).env.MODE === 'development') {
+            // In development, the Vite server (e.g., localhost:3000) is on a different
+            // port than the WebSocket server (e.g., localhost:8080).
+            host = `${window.location.hostname}:8080`;
+        } else {
+            // In production, we assume the WebSocket server is on the same host and port.
+            host = window.location.host;
         }
         
         const wsUrl = `${proto}//${host}`;
@@ -605,10 +621,28 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const msg = JSON.parse(event.data);
                 switch (msg.type) {
+                    case 'hello_ack':
+                        selfId = msg.id;
+                        break;
                     case 'welcome':
                         selfId = msg.self.id;
+                        if (typeof msg.self.name === 'string') {
+                            playerName = msg.self.name;
+                            personLabel.textContent = playerName;
+                            if (playerNameInput.value.trim() !== playerName) {
+                                playerNameInput.value = playerName;
+                            }
+                        }
                         otherPlayersContainer.innerHTML = '';
                         otherPlayers.clear();
+                        chatBubbles.forEach(entry => {
+                            clearTimeout(entry.hideTimer);
+                            if (entry.removeTimer !== undefined) {
+                                clearTimeout(entry.removeTimer);
+                            }
+                            entry.element.remove();
+                        });
+                        chatBubbles.clear();
                         msg.players.forEach((p: any) => {
                             if (p.id !== selfId) addOtherPlayer(p);
                         });
@@ -632,6 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const sender = otherPlayers.get(msg.entry.playerId);
                         const color = msg.entry.playerId === selfId ? 'yellow' : (sender ? sender.color : '#FFFFFF');
                         addChatMessage(msg.entry.name, msg.entry.message, color);
+                        showChatBubble(msg.entry.playerId, msg.entry.message);
                         break;
                     }
                     case 'ping':
@@ -643,22 +678,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        ws.onclose = () => {
-            console.log('WebSocket disconnected. Attempting to reconnect...');
+        ws.onclose = (event: CloseEvent) => {
+            console.log(`WebSocket disconnected. Code: ${event.code}, Reason: "${event.reason}". Attempting to reconnect...`);
             ws = null;
             setTimeout(connectWebSocket, 3000);
         };
 
         ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            ws?.close();
+            console.error('WebSocket error event:', error);
         };
     }
 
     // --- Chat Logic ---
     function addChatMessage(sender: string, message: string, color = 'white') {
         const p = document.createElement('p');
-        p.innerHTML = `<strong style="color: ${color};">${sender}:</strong> ${message}`;
+        const strong = document.createElement('strong');
+        strong.style.color = color;
+        strong.textContent = `${sender}:`;
+        p.appendChild(strong);
+        p.appendChild(document.createTextNode(` ${message}`));
         chatHistory.appendChild(p);
         chatHistory.scrollTop = chatHistory.scrollHeight;
     }
@@ -672,6 +710,49 @@ document.addEventListener('DOMContentLoaded', () => {
             }));
             chatInput.value = '';
         }
+    }
+
+    function showChatBubble(playerId: string, message: string) {
+        let parent: HTMLElement | null = null;
+        if (selfId && playerId === selfId) {
+            parent = personContainer;
+        } else {
+            parent = otherPlayers.get(playerId)?.element ?? null;
+        }
+
+        if (!parent) return;
+
+        const existing = chatBubbles.get(playerId);
+        if (existing) {
+            clearTimeout(existing.hideTimer);
+            if (existing.removeTimer !== undefined) {
+                clearTimeout(existing.removeTimer);
+            }
+            existing.element.remove();
+            chatBubbles.delete(playerId);
+        }
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble';
+        bubble.textContent = message;
+        parent.appendChild(bubble);
+
+        requestAnimationFrame(() => {
+            bubble.classList.add('visible');
+        });
+
+        const entry: ChatBubbleEntry = { element: bubble, hideTimer: 0 };
+        chatBubbles.set(playerId, entry);
+
+        entry.hideTimer = window.setTimeout(() => {
+            bubble.classList.remove('visible');
+            entry.removeTimer = window.setTimeout(() => {
+                if (chatBubbles.get(playerId)?.element === bubble) {
+                    chatBubbles.delete(playerId);
+                }
+                bubble.remove();
+            }, 250);
+        }, 4000);
     }
 
 
