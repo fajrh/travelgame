@@ -237,6 +237,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let ws: WebSocket | null = null;
     let selfId: string | null = null;
     let lastPositionSent = 0;
+    type ChatBubbleEntry = { element: HTMLElement; hideTimer: number; removeTimer?: number };
+    const chatBubbles = new Map<string, ChatBubbleEntry>();
 
     interface OtherPlayer {
         id: string;
@@ -547,6 +549,16 @@ document.addEventListener('DOMContentLoaded', () => {
             player.element.remove();
             otherPlayers.delete(playerId);
         }
+
+        const bubble = chatBubbles.get(playerId);
+        if (bubble) {
+            clearTimeout(bubble.hideTimer);
+            if (bubble.removeTimer !== undefined) {
+                clearTimeout(bubble.removeTimer);
+            }
+            bubble.element.remove();
+            chatBubbles.delete(playerId);
+        }
     }
 
     function updateOtherPlayerPosition(playerData: any) {
@@ -605,10 +617,28 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const msg = JSON.parse(event.data);
                 switch (msg.type) {
+                    case 'hello_ack':
+                        selfId = msg.id;
+                        break;
                     case 'welcome':
                         selfId = msg.self.id;
+                        if (typeof msg.self.name === 'string') {
+                            playerName = msg.self.name;
+                            personLabel.textContent = playerName;
+                            if (playerNameInput.value.trim() !== playerName) {
+                                playerNameInput.value = playerName;
+                            }
+                        }
                         otherPlayersContainer.innerHTML = '';
                         otherPlayers.clear();
+                        chatBubbles.forEach(entry => {
+                            clearTimeout(entry.hideTimer);
+                            if (entry.removeTimer !== undefined) {
+                                clearTimeout(entry.removeTimer);
+                            }
+                            entry.element.remove();
+                        });
+                        chatBubbles.clear();
                         msg.players.forEach((p: any) => {
                             if (p.id !== selfId) addOtherPlayer(p);
                         });
@@ -632,6 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const sender = otherPlayers.get(msg.entry.playerId);
                         const color = msg.entry.playerId === selfId ? 'yellow' : (sender ? sender.color : '#FFFFFF');
                         addChatMessage(msg.entry.name, msg.entry.message, color);
+                        showChatBubble(msg.entry.playerId, msg.entry.message);
                         break;
                     }
                     case 'ping':
@@ -658,11 +689,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Chat Logic ---
     function addChatMessage(sender: string, message: string, color = 'white') {
         const p = document.createElement('p');
-        p.innerHTML = `<strong style="color: ${color};">${sender}:</strong> ${message}`;
+        const strong = document.createElement('strong');
+        strong.style.color = color;
+        strong.textContent = `${sender}:`;
+        p.appendChild(strong);
+        p.appendChild(document.createTextNode(` ${message}`));
         chatHistory.appendChild(p);
         chatHistory.scrollTop = chatHistory.scrollHeight;
     }
-    
+
     function handleSendMessage() {
         const message = chatInput.value.trim();
         if (message && ws?.readyState === WebSocket.OPEN) {
@@ -672,6 +707,49 @@ document.addEventListener('DOMContentLoaded', () => {
             }));
             chatInput.value = '';
         }
+    }
+
+    function showChatBubble(playerId: string, message: string) {
+        let parent: HTMLElement | null = null;
+        if (selfId && playerId === selfId) {
+            parent = personContainer;
+        } else {
+            parent = otherPlayers.get(playerId)?.element ?? null;
+        }
+
+        if (!parent) return;
+
+        const existing = chatBubbles.get(playerId);
+        if (existing) {
+            clearTimeout(existing.hideTimer);
+            if (existing.removeTimer !== undefined) {
+                clearTimeout(existing.removeTimer);
+            }
+            existing.element.remove();
+            chatBubbles.delete(playerId);
+        }
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble';
+        bubble.textContent = message;
+        parent.appendChild(bubble);
+
+        requestAnimationFrame(() => {
+            bubble.classList.add('visible');
+        });
+
+        const entry: ChatBubbleEntry = { element: bubble, hideTimer: 0 };
+        chatBubbles.set(playerId, entry);
+
+        entry.hideTimer = window.setTimeout(() => {
+            bubble.classList.remove('visible');
+            entry.removeTimer = window.setTimeout(() => {
+                if (chatBubbles.get(playerId)?.element === bubble) {
+                    chatBubbles.delete(playerId);
+                }
+                bubble.remove();
+            }, 250);
+        }, 4000);
     }
 
 
