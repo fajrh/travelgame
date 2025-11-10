@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import ChatPanel from './components/ChatPanel';
 import MapView from './components/MapView';
 import PlayerPanel from './components/PlayerPanel';
@@ -18,6 +18,25 @@ const createMessage = (author: ChatMessage['author'], text: string): ChatMessage
   timestamp: formatTimestamp(new Date()),
 });
 
+const AVATAR_OPTIONS = [
+  '🧭',
+  '🛫',
+  '🌍',
+  '🗺️',
+  '🛳️',
+  '🚀',
+  '🏝️',
+  '🛶',
+  '🏕️',
+  '🏜️',
+  '🏔️',
+  '🕌',
+  '🕍',
+  '🎡',
+  '🎢',
+  '🛤️',
+] as const;
+
 const App = () => {
   if (LOCATIONS.length === 0) {
     throw new Error('No locations configured for Travel Game.');
@@ -27,6 +46,7 @@ const App = () => {
 
   const [playerName, setPlayerName] = useState('Traveler');
   const [score, setScore] = useState(120);
+  const [avatar, setAvatar] = useState<string>(AVATAR_OPTIONS[1]);
   const [selectedLocation, setSelectedLocation] = useState<GameLocation>(initialLocation);
   const [visitedLocations, setVisitedLocations] = useState<GameLocation[]>([initialLocation]);
   const [souvenirs, setSouvenirs] = useState<string[]>(() => {
@@ -37,11 +57,25 @@ const App = () => {
     createMessage('guide', 'Welcome aboard! Pick a city to plan your next adventure.'),
   ]);
   const [chatDraft, setChatDraft] = useState('');
+  const [onlinePlayerCount, setOnlinePlayerCount] = useState(() => Math.floor(Math.random() * 6) + 5);
 
   const visitedLocationIds = useMemo(
     () => new Set(visitedLocations.map((location) => location.id)),
     [visitedLocations],
   );
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setOnlinePlayerCount((current) => {
+        const direction = Math.random() > 0.5 ? 1 : -1;
+        const magnitude = Math.random() > 0.75 ? 2 : 1;
+        const nextValue = current + direction * magnitude;
+        return Math.min(Math.max(nextValue, 1), 99);
+      });
+    }, 15000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const handleSelectLocation = (location: GameLocation) => {
     setSelectedLocation(location);
@@ -82,19 +116,38 @@ const App = () => {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <h1>Travel Game Control Center</h1>
-        <p className="app-header__tagline">
-          Plan itineraries, chat with your crew, and collect souvenirs without leaving the dashboard.
-        </p>
+        <div className="app-header__title-group">
+          <h1>Travel Game Control Center</h1>
+          <p className="app-header__tagline">
+            Plan itineraries, chat with your crew, and collect souvenirs without leaving the dashboard.
+          </p>
+        </div>
+        <dl className="app-status" aria-label="Session status">
+          <div className="app-status__item">
+            <dt className="app-status__label">Current city</dt>
+            <dd className="app-status__value">{selectedLocation.name}</dd>
+          </div>
+          <div className="app-status__item">
+            <dt className="app-status__label">Players online</dt>
+            <dd className="app-status__value">{onlinePlayerCount}</dd>
+          </div>
+          <div className="app-status__item">
+            <dt className="app-status__label">Souvenirs</dt>
+            <dd className="app-status__value">{souvenirs.length}</dd>
+          </div>
+        </dl>
       </header>
       <main className="app-layout">
         <PlayerPanel
           playerName={playerName}
           score={score}
+          avatar={avatar}
+          avatarOptions={AVATAR_OPTIONS}
           selectedLocation={selectedLocation}
           visitedLocations={visitedLocations}
           souvenirs={souvenirs}
           onRename={setPlayerName}
+          onSelectAvatar={setAvatar}
         />
         <MapView
           locations={LOCATIONS}
