@@ -2,20 +2,28 @@ import type { GameLocation } from '../types';
 
 type PlayerPanelProps = {
   playerName: string;
-  score: number;
+  balance: number;
+  avatar: string;
+  avatarOptions: readonly string[];
+  onlineCount: number | null;
   selectedLocation: GameLocation;
   visitedLocations: GameLocation[];
   souvenirs: string[];
   onRename: (value: string) => void;
+  onSelectAvatar: (value: string) => void;
 };
 
 const PlayerPanel = ({
   playerName,
-  score,
+  balance,
+  avatar,
+  avatarOptions,
+  onlineCount,
   selectedLocation,
   visitedLocations,
   souvenirs,
   onRename,
+  onSelectAvatar,
 }: PlayerPanelProps) => (
   <aside className="panel player-panel" aria-label="Player profile">
     <header className="panel-header">
@@ -24,7 +32,7 @@ const PlayerPanel = ({
     </header>
     <div className="player-card">
       <div className="player-card__avatar" aria-hidden>
-        ✈️
+        {avatar}
       </div>
       <div className="player-card__details">
         <label className="player-card__label" htmlFor="player-name">
@@ -37,9 +45,44 @@ const PlayerPanel = ({
           onChange={(event) => onRename(event.target.value)}
           maxLength={32}
         />
-        <p className="player-card__score">Score: {score}</p>
+        <p className="player-card__balance">
+          Funds:{' '}
+          <span className="player-card__balance-value">
+            {new Intl.NumberFormat(undefined, {
+              style: 'currency',
+              currency: 'USD',
+              maximumFractionDigits: 0,
+            }).format(balance)}
+          </span>
+          <span className="player-card__online" aria-live="polite">
+            {onlineCount === null ? 'syncing…' : `${onlineCount} online`}
+          </span>
+        </p>
       </div>
     </div>
+    <section className="player-section">
+      <h3>Choose your avatar</h3>
+      <p className="player-section__hint">Pick an emoji to represent you on the map.</p>
+      <div className="avatar-grid" role="list">
+        {avatarOptions.map((option) => {
+          const isSelected = option === avatar;
+          return (
+            <button
+              key={option}
+              type="button"
+              role="listitem"
+              className={`avatar-grid__button${isSelected ? ' is-selected' : ''}`}
+              onClick={() => onSelectAvatar(option)}
+              aria-pressed={isSelected}
+              title={`Select ${option} as your avatar`}
+            >
+              <span aria-hidden>{option}</span>
+              <span className="sr-only">{`Avatar ${option}${isSelected ? ' selected' : ''}`}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
     <section className="player-section">
       <h3>Currently exploring</h3>
       <p>
