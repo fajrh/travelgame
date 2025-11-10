@@ -3,19 +3,25 @@ import type { GameLocation } from '../types';
 type PlayerPanelProps = {
   playerName: string;
   score: number;
+  avatar: string;
+  avatarOptions: readonly string[];
   selectedLocation: GameLocation;
   visitedLocations: GameLocation[];
   souvenirs: string[];
   onRename: (value: string) => void;
+  onSelectAvatar: (value: string) => void;
 };
 
 const PlayerPanel = ({
   playerName,
   score,
+  avatar,
+  avatarOptions,
   selectedLocation,
   visitedLocations,
   souvenirs,
   onRename,
+  onSelectAvatar,
 }: PlayerPanelProps) => (
   <aside className="panel player-panel" aria-label="Player profile">
     <header className="panel-header">
@@ -24,7 +30,7 @@ const PlayerPanel = ({
     </header>
     <div className="player-card">
       <div className="player-card__avatar" aria-hidden>
-        ✈️
+        {avatar}
       </div>
       <div className="player-card__details">
         <label className="player-card__label" htmlFor="player-name">
@@ -40,6 +46,28 @@ const PlayerPanel = ({
         <p className="player-card__score">Score: {score}</p>
       </div>
     </div>
+    <section className="player-section" aria-label="Avatar selection">
+      <h3>Choose your avatar</h3>
+      <p className="player-section__hint">Tap an emoji to change how you appear in the log.</p>
+      <div className="avatar-grid" role="list">
+        {avatarOptions.map((option) => {
+          const isSelected = option === avatar;
+          return (
+            <button
+              key={option}
+              type="button"
+              role="listitem"
+              className={`avatar-grid__button${isSelected ? ' is-selected' : ''}`}
+              onClick={() => onSelectAvatar(option)}
+              aria-pressed={isSelected}
+            >
+              <span aria-hidden>{option}</span>
+              <span className="visually-hidden">{`Select avatar ${option}`}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
     <section className="player-section">
       <h3>Currently exploring</h3>
       <p>

@@ -18,6 +18,25 @@ const createMessage = (author: ChatMessage['author'], text: string): ChatMessage
   timestamp: formatTimestamp(new Date()),
 });
 
+const AVATAR_OPTIONS = [
+  '🧭',
+  '🛫',
+  '🌍',
+  '🗺️',
+  '🛳️',
+  '🚀',
+  '🏝️',
+  '🛶',
+  '🏕️',
+  '🏜️',
+  '🏔️',
+  '🕌',
+  '🕍',
+  '🎡',
+  '🎢',
+  '🛤️',
+] as const;
+
 const App = () => {
   if (LOCATIONS.length === 0) {
     throw new Error('No locations configured for Travel Game.');
@@ -27,6 +46,7 @@ const App = () => {
 
   const [playerName, setPlayerName] = useState('Traveler');
   const [score, setScore] = useState(120);
+  const [avatar, setAvatar] = useState<string>(AVATAR_OPTIONS[1]);
   const [selectedLocation, setSelectedLocation] = useState<GameLocation>(initialLocation);
   const [visitedLocations, setVisitedLocations] = useState<GameLocation[]>([initialLocation]);
   const [souvenirs, setSouvenirs] = useState<string[]>(() => {
@@ -91,10 +111,13 @@ const App = () => {
         <PlayerPanel
           playerName={playerName}
           score={score}
+          avatar={avatar}
+          avatarOptions={AVATAR_OPTIONS}
           selectedLocation={selectedLocation}
           visitedLocations={visitedLocations}
           souvenirs={souvenirs}
           onRename={setPlayerName}
+          onSelectAvatar={setAvatar}
         />
         <MapView
           locations={LOCATIONS}
