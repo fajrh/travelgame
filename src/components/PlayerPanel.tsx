@@ -2,9 +2,10 @@ import type { GameLocation } from '../types';
 
 type PlayerPanelProps = {
   playerName: string;
-  score: number;
+  balance: number;
   avatar: string;
   avatarOptions: readonly string[];
+  onlineCount: number | null;
   selectedLocation: GameLocation;
   visitedLocations: GameLocation[];
   souvenirs: string[];
@@ -14,9 +15,10 @@ type PlayerPanelProps = {
 
 const PlayerPanel = ({
   playerName,
-  score,
+  balance,
   avatar,
   avatarOptions,
+  onlineCount,
   selectedLocation,
   visitedLocations,
   souvenirs,
@@ -28,6 +30,7 @@ const PlayerPanel = ({
       <h2>Travel Log</h2>
       <p>Keep track of your journey, rename your traveler, and browse collected souvenirs.</p>
     </header>
+
     <div className="player-card">
       <div className="player-card__avatar" aria-hidden>
         {avatar}
@@ -43,12 +46,25 @@ const PlayerPanel = ({
           onChange={(event) => onRename(event.target.value)}
           maxLength={32}
         />
-        <p className="player-card__score">Score: {score}</p>
+        <p className="player-card__balance">
+          Funds:{' '}
+          <span className="player-card__balance-value">
+            {new Intl.NumberFormat(undefined, {
+              style: 'currency',
+              currency: 'USD',
+              maximumFractionDigits: 0,
+            }).format(balance)}
+          </span>
+          <span className="player-card__online" aria-live="polite">
+            {onlineCount === null ? ' syncing…' : ` · ${onlineCount} online`}
+          </span>
+        </p>
       </div>
     </div>
+
     <section className="player-section" aria-label="Avatar selection">
       <h3>Choose your avatar</h3>
-      <p className="player-section__hint">Tap an emoji to change how you appear in the log.</p>
+      <p className="player-section__hint">Pick an emoji to represent you on the map.</p>
       <div className="avatar-grid" role="list">
         {avatarOptions.map((option) => {
           const isSelected = option === avatar;
@@ -60,14 +76,16 @@ const PlayerPanel = ({
               className={`avatar-grid__button${isSelected ? ' is-selected' : ''}`}
               onClick={() => onSelectAvatar(option)}
               aria-pressed={isSelected}
+              title={`Select ${option} as your avatar`}
             >
               <span aria-hidden>{option}</span>
-              <span className="visually-hidden">{`Select avatar ${option}`}</span>
+              <span className="sr-only">{`Avatar ${option}${isSelected ? ' selected' : ''}`}</span>
             </button>
           );
         })}
       </div>
     </section>
+
     <section className="player-section">
       <h3>Currently exploring</h3>
       <p>
@@ -76,6 +94,7 @@ const PlayerPanel = ({
       <p className="player-section__description">{selectedLocation.description}</p>
       <p className="player-section__cuisine">🍽 {selectedLocation.cuisine}</p>
     </section>
+
     <section className="player-section">
       <h3>Visited cities</h3>
       <ul className="player-section__list">
@@ -84,6 +103,7 @@ const PlayerPanel = ({
         ))}
       </ul>
     </section>
+
     <section className="player-section">
       <h3>Souvenir shelf</h3>
       {souvenirs.length === 0 ? (
