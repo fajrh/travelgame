@@ -1,3 +1,6 @@
+Got it — I merged the conflicting blocks and removed duplicates. Here’s the cleaned, updated CSS you can drop in as-is:
+
+```css
 :root {
   font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   line-height: 1.5;
@@ -169,9 +172,74 @@ input {
   outline-offset: 2px;
 }
 
-.player-card__score {
+.player-card__balance {
   margin: 0;
   font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.player-card__balance-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.player-card__online {
+  font-family: Arial, sans-serif;
+  font-size: 10px;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+}
+
+.player-section__hint {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+/* Avatar grid (single, unified version) */
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
+  gap: 0.6rem;
+}
+
+.avatar-grid__button {
+  display: grid;
+  place-items: center;
+  padding: 0.4rem;
+  border-radius: 16px;
+  background: rgba(148, 163, 184, 0.12);
+  color: inherit;
+  font-size: 1.65rem;
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.avatar-grid__button:is(:hover, :focus-visible) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 20px rgba(56, 189, 248, 0.25);
+  background: rgba(56, 189, 248, 0.22);
+  outline: none;
+}
+
+.avatar-grid__button.is-selected {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(129, 140, 248, 0.35));
+  box-shadow: 0 12px 26px rgba(129, 140, 248, 0.35);
+}
+
+.sr-only {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 1px;
+  white-space: nowrap;
 }
 
 .player-section {
@@ -183,12 +251,6 @@ input {
 .player-section h3 {
   margin: 0;
   font-size: 1.15rem;
-}
-
-.player-section__hint {
-  margin: 0;
-  color: #94a3b8;
-  font-size: 0.9rem;
 }
 
 .player-section__description {
@@ -224,35 +286,6 @@ input {
 .player-section__empty {
   margin: 0;
   color: #94a3b8;
-}
-
-.avatar-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
-  gap: 0.6rem;
-}
-
-.avatar-grid__button {
-  display: grid;
-  place-items: center;
-  padding: 0.4rem;
-  border-radius: 16px;
-  background: rgba(148, 163, 184, 0.12);
-  color: inherit;
-  font-size: 1.65rem;
-  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
-}
-
-.avatar-grid__button:is(:hover, :focus-visible) {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 20px rgba(56, 189, 248, 0.25);
-  background: rgba(56, 189, 248, 0.22);
-  outline: none;
-}
-
-.avatar-grid__button.is-selected {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(129, 140, 248, 0.35));
-  box-shadow: 0 12px 26px rgba(129, 140, 248, 0.35);
 }
 
 .location-grid {
@@ -423,6 +456,8 @@ input {
   border: 0;
 }
 
+/* ===== Responsive ===== */
+
 @media (max-width: 1200px) {
   .app-layout {
     grid-template-columns: 1fr;
@@ -452,8 +487,10 @@ input {
   }
 
   .app-header {
+    flex-direction: column;
     justify-content: center;
     text-align: center;
+    gap: 1rem;
   }
 
   .app-header__title-group {
@@ -516,3 +553,4 @@ input {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+```

@@ -14,3 +14,14 @@ export type ChatMessage = {
   text: string;
   timestamp: string;
 };
+
+export type PlayerProfile = {
+  id: string;
+  name: string;
+  avatar: string;
+  balance: number;
+  locationId: string;
+  visitedLocationIds: string[];
+  souvenirs: string[];
+  updatedAt: number;
+};
