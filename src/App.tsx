@@ -7,6 +7,7 @@ import type { ChatMessage, GameLocation } from './types';
 
 const PLAYER_ID_STORAGE_KEY = 'travelgame-player-id';
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+
 const AVATAR_OPTIONS = [
   '🧭',
   '🛫',
@@ -25,6 +26,7 @@ const AVATAR_OPTIONS = [
   '🎢',
   '🛤️',
 ] as const;
+
 const CHANGE_DEBOUNCE_MS = 1500;
 const SAVE_INTERVAL_MS = 60_000;
 const ONLINE_POLL_INTERVAL_MS = 30_000;
@@ -55,12 +57,14 @@ const App = () => {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [onlineCount, setOnlineCount] = useState<number | null>(null);
+
   const [selectedLocation, setSelectedLocation] = useState<GameLocation>(initialLocation);
   const [visitedLocations, setVisitedLocations] = useState<GameLocation[]>([initialLocation]);
   const [souvenirs, setSouvenirs] = useState<string[]>(() => {
     const firstSouvenir = initialLocation.souvenirs[0];
     return firstSouvenir ? [firstSouvenir] : [];
   });
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => [
     createMessage('guide', 'Welcome aboard! Pick a city to plan your next adventure.'),
   ]);
@@ -82,10 +86,10 @@ const App = () => {
 
   const saveTimeoutRef = useRef<number | null>(null);
 
+  // Initialize / load or create player id
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
+    if (typeof window === 'undefined') return;
+
     const storedId = window.localStorage.getItem(PLAYER_ID_STORAGE_KEY);
     if (storedId) {
       setPlayerId(storedId);
@@ -99,10 +103,9 @@ const App = () => {
     setPlayerId(newId);
   }, []);
 
+  // Load profile from API
   useEffect(() => {
-    if (!playerId) {
-      return;
-    }
+    if (!playerId) return;
 
     let cancelled = false;
 
@@ -119,7 +122,7 @@ const App = () => {
           return;
         }
 
-        const profile = data.profile;
+        const profile = (data as any).profile;
         if (profile && typeof profile === 'object') {
           if (typeof profile.name === 'string' && profile.name.trim().length > 0) {
             setPlayerName(profile.name.slice(0, 40));
@@ -134,8 +137,8 @@ const App = () => {
           if (Array.isArray(profile.souvenirs)) {
             setSouvenirs(
               profile.souvenirs
-                .map((item) => String(item))
-                .filter((item, index, array) => array.indexOf(item) === index),
+                .map((item: unknown) => String(item))
+                .filter((item: string, index: number, array: string[]) => array.indexOf(item) === index),
             );
           }
 
@@ -150,13 +153,11 @@ const App = () => {
 
           if (Array.isArray(profile.visitedLocationIds)) {
             const mapped = profile.visitedLocationIds
-              .map((id) => LOCATIONS.find((location) => location.id === id))
-              .filter((value): value is GameLocation => Boolean(value));
+              .map((id: string) => LOCATIONS.find((location) => location.id === id))
+              .filter((value: GameLocation | undefined): value is GameLocation => Boolean(value));
 
             const deduped = mapped.reduce<GameLocation[]>((acc, location) => {
-              if (acc.some((item) => item.id === location.id)) {
-                return acc;
-              }
+              if (acc.some((item) => item.id === location.id)) return acc;
               return [...acc, location];
             }, []);
 
@@ -172,13 +173,11 @@ const App = () => {
       } catch (error) {
         console.warn('Failed to load player profile', error);
       } finally {
-        if (!cancelled) {
-          setProfileLoaded(true);
-        }
+        if (!cancelled) setProfileLoaded(true);
       }
     };
 
-    loadProfile();
+    void loadProfile();
 
     return () => {
       cancelled = true;
@@ -186,9 +185,7 @@ const App = () => {
   }, [playerId, initialLocation]);
 
   const pushProfile = useCallback(async () => {
-    if (!playerId) {
-      return;
-    }
+    if (!playerId) return;
 
     const payload = {
       id: playerId,
@@ -203,9 +200,7 @@ const App = () => {
     try {
       await fetch(`${API_BASE}/api/player`, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       });
     } catch (error) {
@@ -213,10 +208,9 @@ const App = () => {
     }
   }, [playerId, playerName, avatar, balance, selectedLocation.id, visitedLocationIdList, souvenirs]);
 
+  // Periodic autosave
   useEffect(() => {
-    if (!playerId || !profileLoaded) {
-      return;
-    }
+    if (!playerId || !profileLoaded) return;
 
     const handle = window.setInterval(() => {
       void pushProfile();
@@ -227,10 +221,9 @@ const App = () => {
     };
   }, [playerId, profileLoaded, pushProfile]);
 
+  // Debounced save on changes
   useEffect(() => {
-    if (!playerId || !profileLoaded) {
-      return;
-    }
+    if (!playerId || !profileLoaded) return;
 
     if (saveTimeoutRef.current) {
       window.clearTimeout(saveTimeoutRef.current);
@@ -249,39 +242,32 @@ const App = () => {
     };
   }, [playerName, avatar, balance, selectedLocation.id, visitedLocationIdList, souvenirs, playerId, profileLoaded, pushProfile]);
 
+  // Initial push after profile load
   useEffect(() => {
-    if (!playerId || !profileLoaded) {
-      return;
-    }
-
+    if (!playerId || !profileLoaded) return;
     void pushProfile();
   }, [playerId, profileLoaded, pushProfile]);
 
+  // Online count polling
   useEffect(() => {
-    if (!playerId) {
-      return;
-    }
+    if (!playerId) return;
 
     let cancelled = false;
 
     const fetchOnlineCount = async () => {
       try {
         const response = await fetch(`${API_BASE}/api/players/online`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch online count');
-        }
+        if (!response.ok) throw new Error('Failed to fetch online count');
         const data = await response.json();
         if (!cancelled && data && typeof data.count === 'number') {
           setOnlineCount(data.count);
         }
-      } catch (error) {
-        if (!cancelled) {
-          setOnlineCount(null);
-        }
+      } catch {
+        if (!cancelled) setOnlineCount(null);
       }
     };
 
-    fetchOnlineCount();
+    void fetchOnlineCount();
     const interval = window.setInterval(fetchOnlineCount, ONLINE_POLL_INTERVAL_MS);
 
     return () => {
@@ -308,19 +294,14 @@ const App = () => {
       setBalance((value) => value + 50);
       setSouvenirs((current) => {
         const souvenir = location.souvenirs.find((item) => !current.includes(item));
-        if (!souvenir) {
-          return current;
-        }
-        return [...current, souvenir];
-      });
+        return souvenir ? [...current, souvenir] : current;
+        });
     }
   };
 
   const handleSendMessage = () => {
     const trimmed = chatDraft.trim();
-    if (!trimmed) {
-      return;
-    }
+    if (!trimmed) return;
 
     setChatMessages((current) => [...current, createMessage('player', trimmed)]);
     setChatDraft('');
@@ -334,6 +315,7 @@ const App = () => {
           Plan itineraries, chat with your crew, and collect souvenirs without leaving the dashboard.
         </p>
       </header>
+
       <main className="app-layout">
         <PlayerPanel
           playerName={playerName}
@@ -347,12 +329,14 @@ const App = () => {
           onRename={setPlayerName}
           onSelectAvatar={handleSelectAvatar}
         />
+
         <MapView
           locations={LOCATIONS}
           selectedLocationId={selectedLocation.id}
           visitedLocationIds={visitedLocationIdSet}
           onSelectLocation={handleSelectLocation}
         />
+
         <ChatPanel
           messages={chatMessages}
           draft={chatDraft}
